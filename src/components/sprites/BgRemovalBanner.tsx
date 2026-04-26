@@ -166,47 +166,50 @@ export default function BgRemovalBanner({
         </button>
       </div>
 
-      {/* Tolerance slider */}
-      <div className="flex items-center gap-3">
-        <label className="text-[10px] font-mono text-text-muted w-16">Tolerance</label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={tolerance}
-          onChange={(e) => setTolerance(Number(e.target.value))}
-          className="flex-1 accent-[var(--accent-amber)]"
-        />
-        <span className="text-[10px] font-mono text-text-primary w-8 text-right">
-          {tolerance}
-        </span>
+      {/* Tolerance slider — emphasized current value */}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-3">
+          <label className="text-[10px] font-mono text-text-muted w-16">Tolerance</label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={tolerance}
+            onChange={(e) => setTolerance(Number(e.target.value))}
+            className="flex-1 accent-[var(--accent-amber)]"
+          />
+        </div>
+        <p className="text-xs font-mono text-text-muted text-center">
+          Tolerance:{' '}
+          <span className="text-lg font-bold text-accent-amber font-mono">{tolerance}</span>
+        </p>
       </div>
 
-      {/* Before / After preview */}
-      <div className="flex items-center gap-4 justify-center">
+      {/* Before / After preview — larger 320×320 boxes with object-fit: contain.
+          Stacks vertically on mobile, side-by-side from md: up. */}
+      <div className="flex flex-col md:flex-row md:items-center gap-4 justify-center">
         {/* Before */}
-        <div className="text-center">
+        <div className="text-center flex-1">
           <p className="text-[9px] font-mono text-text-muted mb-1 uppercase tracking-wider">
             Before
           </p>
-          <div className="inline-block rounded border border-border-subtle overflow-hidden">
-            <img
-              src={imageUrl}
-              alt="Before"
-              className="block"
-              style={{
-                imageRendering: 'pixelated',
-                maxWidth: Math.min(200, imageWidth),
-                maxHeight: Math.min(150, imageHeight),
-              }}
-            />
+          <div className="inline-block rounded border border-border-subtle overflow-hidden bg-bg-elevated">
+            <div className="w-[320px] h-[320px] max-w-full flex items-center justify-center">
+              <img
+                src={imageUrl}
+                alt="Before"
+                className="block max-w-full max-h-full pixel-art-render"
+                style={{ objectFit: 'contain' }}
+              />
+            </div>
           </div>
         </div>
 
-        <span className="text-text-muted font-mono">&rarr;</span>
+        <span className="text-text-muted font-mono text-2xl self-center hidden md:inline">&rarr;</span>
+        <span className="text-text-muted font-mono text-2xl text-center md:hidden">&darr;</span>
 
         {/* After */}
-        <div className="text-center">
+        <div className="text-center flex-1">
           <p className="text-[9px] font-mono text-accent-amber mb-1 uppercase tracking-wider">
             After
           </p>
@@ -219,28 +222,18 @@ export default function BgRemovalBanner({
               backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0',
             }}
           >
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt="After removal"
-                className="block"
-                style={{
-                  imageRendering: 'pixelated',
-                  maxWidth: Math.min(200, imageWidth),
-                  maxHeight: Math.min(150, imageHeight),
-                }}
-              />
-            ) : (
-              <div
-                className="flex items-center justify-center text-[10px] font-mono text-text-muted"
-                style={{
-                  width: Math.min(200, imageWidth),
-                  height: Math.min(150, imageHeight),
-                }}
-              >
-                Processing...
-              </div>
-            )}
+            <div className="w-[320px] h-[320px] max-w-full flex items-center justify-center">
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="After removal"
+                  className="block max-w-full max-h-full pixel-art-render"
+                  style={{ objectFit: 'contain' }}
+                />
+              ) : (
+                <p className="text-[10px] font-mono text-text-muted">Processing...</p>
+              )}
+            </div>
           </div>
         </div>
       </div>

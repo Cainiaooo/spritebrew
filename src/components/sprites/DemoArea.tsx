@@ -20,8 +20,11 @@ type CharState = 'idle' | 'walking' | 'running' | 'attacking' | 'jumping' | 'hur
 type Direction = 'up' | 'down' | 'left' | 'right';
 type BgPreset = 'grid' | 'grass' | 'dungeon' | 'black' | 'white';
 
-const CANVAS_W = 640;
-const CANVAS_H = 480;
+// Internal canvas resolution. The CSS display size is responsive (max 100%
+// width preserving 16:9 aspect ratio) so pixel-art scales cleanly on smaller
+// viewports while keeping the same play area in source-pixel space.
+const CANVAS_W = 1280;
+const CANVAS_H = 720;
 const WALK_SPEED = 2;
 const RUN_SPEED = 4;
 
@@ -329,10 +332,15 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
       const cv = app.canvas as HTMLCanvasElement;
       cv.style.imageRendering = 'pixelated';
       cv.style.display = 'block';
-      cv.style.width = `${CANVAS_W}px`;
-      cv.style.height = `${CANVAS_H}px`;
+      // Responsive display: take 100% of the (max-1280px) container width,
+      // preserving 16:9 aspect ratio. Internal resolution stays at CANVAS_W × CANVAS_H.
+      cv.style.width = '100%';
+      cv.style.height = 'auto';
+      cv.style.aspectRatio = `${CANVAS_W} / ${CANVAS_H}`;
+      cv.style.maxWidth = `${CANVAS_W}px`;
       cv.style.outline = 'none';
       cv.tabIndex = 0;
+      cv.classList.add('pixel-art-render');
 
       cv.addEventListener('focus', () => setFocused(true));
       cv.addEventListener('blur', () => setFocused(false));
@@ -646,13 +654,16 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
 
   return (
     <div className="space-y-4">
-      {/* Canvas container */}
+      {/* Canvas container — responsive max-width with 16:9 aspect ratio.
+          Internal canvas resolution stays at CANVAS_W × CANVAS_H; CSS scales
+          the display down on narrower viewports while preserving pixel art. */}
       <div
-        className={`relative rounded-lg border-2 overflow-hidden inline-block transition-colors ${
+        className={`relative rounded-lg border-2 overflow-hidden transition-colors w-full ${
           focused ? 'border-accent-amber glow-amber' : 'border-border-default'
         }`}
+        style={{ maxWidth: CANVAS_W, aspectRatio: `${CANVAS_W} / ${CANVAS_H}` }}
       >
-        <div ref={containerRef} style={{ width: CANVAS_W, height: CANVAS_H }} />
+        <div ref={containerRef} className="w-full h-full" />
 
         {/* Info overlay */}
         {showOverlay && (
