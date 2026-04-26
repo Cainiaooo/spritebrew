@@ -112,7 +112,7 @@ function startHeartbeat(writer: WritableStreamDefaultWriter<Uint8Array>, ms = 15
 // ── POST handler ──
 
 import { debitTokens, creditTokens } from '@/lib/tokenBalance';
-import { getTokenCost } from '@/lib/styleRegistry';
+import { getTokenCost, getResolutionMode } from '@/lib/styleRegistry';
 import { getAccountStatus } from '@/lib/accountLock';
 
 export async function POST(request: Request) {
@@ -219,6 +219,24 @@ function validateCreateBody(body: GenerateBody): string | null {
   if (!body.prompt?.trim()) return 'Prompt is required.';
   const ps = body.promptStyle ?? body.style;
   if (!ps) return 'Style is required.';
+
+  // If the picked style has explicit resolutionMode metadata (animation styles),
+  // enforce it. Other styles fall back to existing client-side minSize/maxSize clamping.
+  const mode = getResolutionMode(ps);
+  if (mode && body.width !== undefined && body.height !== undefined) {
+    if (mode.kind === 'locked') {
+      if (body.width !== mode.size || body.height !== mode.size) {
+        return `This style is locked at ${mode.size}x${mode.size}. Got ${body.width}x${body.height}.`;
+      }
+    } else {
+      if (body.width < mode.min || body.width > mode.max) {
+        return `Width must be between ${mode.min} and ${mode.max} for this style. Got ${body.width}.`;
+      }
+      if (body.height < mode.min || body.height > mode.max) {
+        return `Height must be between ${mode.min} and ${mode.max} for this style. Got ${body.height}.`;
+      }
+    }
+  }
   return null;
 }
 
@@ -229,7 +247,24 @@ function validateAnimateBody(body: GenerateBody): string | null {
   const w = body.width ?? 64;
   const h = body.height ?? 64;
   if (w !== h) return `Animation requires square dimensions. Got ${w}x${h}.`;
-  if (w < 32 || w > 256) return `Animation resolution must be between 32 and 256. Got ${w}.`;
+
+  // Validate against the action's prompt style resolution mode
+  const promptStyle = ACTION_STYLE_MAP[body.action] ?? FALLBACK_STYLE;
+  const mode = getResolutionMode(promptStyle);
+  if (mode) {
+    if (mode.kind === 'locked') {
+      if (w !== mode.size) {
+        return `This style is locked at ${mode.size}x${mode.size}. Got ${w}x${h}.`;
+      }
+    } else {
+      if (w < mode.min || w > mode.max) {
+        return `Resolution must be between ${mode.min} and ${mode.max} for this style. Got ${w}.`;
+      }
+      if (mode.kind === 'variable_special' && !mode.presets.includes(w)) {
+        return `Resolution must be one of: ${mode.presets.join(', ')}. Got ${w}.`;
+      }
+    }
+  }
   return null;
 }
 

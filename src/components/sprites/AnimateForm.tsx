@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import {
   UploadCloud,
   X,
@@ -8,6 +8,7 @@ import {
   Loader2,
   AlertCircle,
   Play,
+  Lock,
 } from 'lucide-react';
 import { useAuth } from '@clerk/react';
 import { useSpriteStore } from '@/stores/spriteStore';
@@ -15,6 +16,7 @@ import Button from '@/components/ui/Button';
 import CharacterAutoPrep from './CharacterAutoPrep';
 import {
   getTokenCost,
+  getResolutionMode,
   ADVANCED_ANIM_RESOLUTION_PRESETS,
   ADVANCED_ANIM_DEFAULT_RESOLUTION,
 } from '@/lib/styleRegistry';
@@ -129,10 +131,24 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
   const insufficientTokens = tokenBalance < tokenCost;
   const tokensNeeded = tokenCost - tokenBalance;
 
+  // Resolution mode for the currently selected action's prompt style.
+  // Family B (rd_advanced_animation__*) always returns a 'variable' mode 32–256.
+  // If a future action ever maps to a Family A style, the mode adapts.
+  const currentMode = useMemo(
+    () => getResolutionMode(actionPromptStyle) ?? { kind: 'variable' as const, min: 32 as const, max: 256 as const, default: ADVANCED_ANIM_DEFAULT_RESOLUTION },
+    [actionPromptStyle]
+  );
+
   // Auto-toggle animation padding based on selected action.
   useEffect(() => {
     setPaddingEnabled(PADDING_ON_ACTIONS.has(selectedAction));
   }, [selectedAction]);
+
+  // When the selected action's mode changes, snap selectedResolution to its default/locked size.
+  useEffect(() => {
+    const newSize = currentMode.kind === 'locked' ? currentMode.size : currentMode.default;
+    setSelectedResolution((prev) => (prev === newSize ? prev : newSize));
+  }, [currentMode]);
 
   // When resolution changes after a character is already prepped, invalidate it
   // so the user re-runs Auto-Prep at the new size. This is simpler and more
@@ -376,28 +392,44 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
         />
       </div>
 
-      {/* Resolution picker — placed before Auto-Prep so users choose size first */}
+      {/* Resolution picker — placed before Auto-Prep so users choose size first.
+          Picker rendering depends on the selected style's resolutionMode:
+          - locked  → non-editable label
+          - variable / variable_special → preset buttons */}
       <div>
         <label className="block text-xs font-mono text-text-secondary uppercase tracking-wider mb-2">
           Resolution
         </label>
-        <div className="flex gap-1.5">
-          {ADVANCED_ANIM_RESOLUTION_PRESETS.map((res) => (
-            <button
-              key={res}
-              onClick={() => handleResolutionChange(res)}
-              className={`px-3 py-1.5 rounded text-xs font-mono cursor-pointer transition-colors
-                ${selectedResolution === res
-                  ? 'bg-accent-amber text-bg-primary'
-                  : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
-                }`}
-            >
-              {res}
-            </button>
-          ))}
-        </div>
+        {currentMode.kind === 'locked' ? (
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded bg-bg-elevated border border-border-default text-xs font-mono text-text-secondary">
+            <Lock size={12} className="text-text-muted" />
+            {currentMode.size}&times;{currentMode.size}
+            <span className="text-[10px] text-text-muted">(locked for this style by Retro Diffusion)</span>
+          </div>
+        ) : (
+          <div className="flex gap-1.5">
+            {(currentMode.kind === 'variable_special'
+              ? currentMode.presets
+              : (ADVANCED_ANIM_RESOLUTION_PRESETS as readonly number[])
+            ).map((res) => (
+              <button
+                key={res}
+                onClick={() => handleResolutionChange(res)}
+                className={`px-3 py-1.5 rounded text-xs font-mono cursor-pointer transition-colors
+                  ${selectedResolution === res
+                    ? 'bg-accent-amber text-bg-primary'
+                    : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
+                  }`}
+              >
+                {res}
+              </button>
+            ))}
+          </div>
+        )}
         <p className="text-[9px] font-mono text-text-muted/70 mt-1">
-          Larger = more detail. Cost is flat per generation — no resolution surcharge.
+          {currentMode.kind === 'locked'
+            ? 'Retro Diffusion locks this style at this resolution. For higher resolutions, choose a Walking/Idle/Attack style instead.'
+            : 'Larger = more detail. Cost is flat per generation — no resolution surcharge.'}
         </p>
       </div>
 

@@ -6,6 +6,19 @@
 export type StyleCategory = 'characters' | 'items' | 'environments' | 'animations' | 'tiles' | 'ui';
 export type StyleTier = 'fast' | 'plus' | 'pro' | 'animation';
 
+/**
+ * Resolution constraint metadata for animation styles.
+ *
+ *   variable          — Family B (rd_advanced_animation__*): 32-256, picker presets
+ *   variable_special  — animation__vfx: bespoke 24-96 range with explicit presets
+ *   locked            — Family A locked styles (animation__any_animation, etc.)
+ *                       picker is NOT rendered; size is fixed by RD's model
+ */
+export type ResolutionMode =
+  | { kind: 'variable'; min: 32; max: 256; default: number }
+  | { kind: 'variable_special'; min: number; max: number; default: number; presets: number[] }
+  | { kind: 'locked'; size: number };
+
 export interface GenerationStyle {
   id: string;
   label: string;
@@ -22,6 +35,7 @@ export interface GenerationStyle {
   tokenCost: number;
   isAnimation: boolean;
   supportsRemoveBg: boolean;
+  resolutionMode?: ResolutionMode;
 }
 
 export const GENERATION_STYLES: GenerationStyle[] = [
@@ -127,36 +141,42 @@ export const GENERATION_STYLES: GenerationStyle[] = [
     promptStyle: 'animation__four_angle_walking', tier: 'animation', category: 'animations',
     defaultWidth: 48, defaultHeight: 48, minSize: 48, maxSize: 48,
     fixedSize: true, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'locked', size: 48 },
   },
   {
     id: 'anim-walking-idle', label: 'Walking & Idle', description: 'Walking + idle animation combined',
     promptStyle: 'animation__walking_and_idle', tier: 'animation', category: 'animations',
     defaultWidth: 48, defaultHeight: 48, minSize: 48, maxSize: 48,
     fixedSize: true, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'locked', size: 48 },
   },
   {
     id: 'anim-small-sprites', label: 'Small Sprites', description: 'Multi-action small character sprite sheet',
     promptStyle: 'animation__small_sprites', tier: 'animation', category: 'animations',
     defaultWidth: 32, defaultHeight: 32, minSize: 32, maxSize: 32,
     fixedSize: true, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'locked', size: 32 },
   },
   {
     id: 'anim-vfx', label: 'VFX Effects', description: 'Looping visual effects (fire, explosions, magic)',
     promptStyle: 'animation__vfx', tier: 'animation', category: 'animations',
     defaultWidth: 64, defaultHeight: 64, minSize: 24, maxSize: 96,
     fixedSize: false, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'variable_special', min: 24, max: 96, default: 64, presets: [24, 48, 64, 96] },
   },
   {
     id: 'anim-any', label: 'Custom Animation', description: 'Open-ended animation — AI decides the layout',
     promptStyle: 'animation__any_animation', tier: 'animation', category: 'animations',
     defaultWidth: 64, defaultHeight: 64, minSize: 64, maxSize: 64,
     fixedSize: true, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'locked', size: 64 },
   },
   {
     id: 'anim-8dir', label: '8-Direction Rotation', description: 'Character from 8 rotational angles',
     promptStyle: 'animation__8_dir_rotation', tier: 'animation', category: 'animations',
     defaultWidth: 80, defaultHeight: 80, minSize: 80, maxSize: 80,
     fixedSize: true, costPerGeneration: 0.07, tokenCost: 15, isAnimation: true, supportsRemoveBg: false,
+    resolutionMode: { kind: 'locked', size: 80 },
   },
 ];
 
@@ -184,6 +204,30 @@ export const ADVANCED_ANIM_RESOLUTION_PRESETS = [32, 64, 128, 256] as const;
 export const ADVANCED_ANIM_DEFAULT_RESOLUTION = 128;
 export const ADVANCED_ANIM_MIN_SIZE = 32;
 export const ADVANCED_ANIM_MAX_SIZE = 256;
+
+/** The Family B (rd_advanced_animation__*) shared resolution mode. */
+const ADVANCED_ANIM_VARIABLE_MODE: ResolutionMode = {
+  kind: 'variable',
+  min: 32,
+  max: 256,
+  default: ADVANCED_ANIM_DEFAULT_RESOLUTION,
+};
+
+/**
+ * Look up the resolution mode for a given prompt_style.
+ *
+ * - `rd_advanced_animation__*` (Family B): always variable 32–256, default 128.
+ * - `animation__*` (Family A): mode comes from the registry entry.
+ * - Any other style without explicit resolutionMode: returns `null` (caller
+ *   should fall back to the registry's minSize/maxSize fields if needed).
+ */
+export function getResolutionMode(promptStyle: string): ResolutionMode | null {
+  if (promptStyle.startsWith('rd_advanced_animation__')) {
+    return ADVANCED_ANIM_VARIABLE_MODE;
+  }
+  const style = GENERATION_STYLES.find((s) => s.promptStyle === promptStyle);
+  return style?.resolutionMode ?? null;
+}
 
 /**
  * Look up the token cost for a given prompt_style string.
