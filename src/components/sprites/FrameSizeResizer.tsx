@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Grid3X3, Check, Scan, AlertCircle } from 'lucide-react';
 import { loadImage, imageToCanvas, resizePixelArt } from '@/lib/spriteUtils';
+import { SLICER_FRAME_PRESETS } from '@/lib/constants';
 import Button from '@/components/ui/Button';
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -49,7 +50,12 @@ const COMMON_GRIDS: ReadonlyArray<readonly [number, number]> = [
   [3, 2],
 ];
 
-const STANDARD_FRAME_SIZES = [128, 64, 48, 32, 24, 16] as const;
+// Square sizes from the canonical preset list, descending — order matters for
+// detectByStandardSize iteration priority.
+const STANDARD_FRAME_SIZES: readonly number[] = SLICER_FRAME_PRESETS
+  .filter((p) => p.width === p.height)
+  .map((p) => p.width)
+  .sort((a, b) => b - a);
 
 /** Validate a (cols, rows) candidate produces a sensible sprite sheet. */
 function isValidGrid(imgW: number, imgH: number, cols: number, rows: number): boolean {
@@ -221,13 +227,10 @@ const GRID_PRESETS = [
   { cols: 8, rows: 8 },
 ] as const;
 
-const FRAME_SIZE_PRESETS = [
-  { w: 16, h: 16 },
-  { w: 32, h: 32 },
-  { w: 48, h: 48 },
-  { w: 64, h: 64 },
-  { w: 128, h: 128 },
-] as const;
+// Ascending square presets for the resizer's target-size pills.
+const FRAME_SIZE_PRESETS: ReadonlyArray<{ w: number; h: number }> = SLICER_FRAME_PRESETS
+  .filter((p) => p.width === p.height)
+  .map((p) => ({ w: p.width, h: p.height }));
 
 interface FrameSizeResizerProps {
   sourceDataUrl: string;

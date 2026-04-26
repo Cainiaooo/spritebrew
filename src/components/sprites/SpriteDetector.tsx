@@ -11,7 +11,13 @@ import {
   frameToDataURL,
   type DetectedSprite,
 } from '@/lib/spriteUtils';
+import { SLICER_FRAME_PRESETS } from '@/lib/constants';
 import Button from '@/components/ui/Button';
+
+// Square presets from the canonical preset list — used for target-size pills.
+const SQUARE_PRESETS: ReadonlyArray<{ w: number; h: number }> = SLICER_FRAME_PRESETS
+  .filter((p) => p.width === p.height)
+  .map((p) => ({ w: p.width, h: p.height }));
 
 /**
  * Auto-detect sprites mode for the Upload page.
@@ -454,12 +460,7 @@ export default function SpriteDetector({
                 >
                   Match largest
                 </button>
-                {[
-                  { w: 32, h: 32 },
-                  { w: 48, h: 48 },
-                  { w: 64, h: 64 },
-                  { w: 128, h: 128 },
-                ].map((p) => {
+                {SQUARE_PRESETS.map((p) => {
                   const active = sizeMode === 'custom' && targetW === p.w && targetH === p.h;
                   return (
                     <button

@@ -1,4 +1,8 @@
-import { SPRITE_SIZES } from '@/lib/constants';
+import { SLICER_FRAME_PRESETS, SLICER_DETECT_TRY_SIZES } from '@/lib/constants';
+
+// Square-only canonical sizes derived from the single-source-of-truth presets.
+// Used by detectFrameGrid's findBestStandardSize fallback.
+const SLICER_SQUARE_PRESETS = SLICER_FRAME_PRESETS.filter((p) => p.width === p.height);
 
 let _idCounter = 0;
 
@@ -101,11 +105,11 @@ export function detectFrameGrid(
     };
   }
 
-  // 3) Find all standard SPRITE_SIZES that evenly divide the image,
+  // 3) Find all canonical SLICER_FRAME_PRESETS that evenly divide the image,
   //    prefer the one that produces the most frames (smallest frame size)
   const candidates: Array<{ w: number; h: number; cols: number; rows: number; frames: number }> = [];
 
-  for (const s of SPRITE_SIZES) {
+  for (const s of SLICER_FRAME_PRESETS) {
     if (width % s.width === 0 && height % s.height === 0) {
       const cols = width / s.width;
       const rows = height / s.height;
@@ -120,12 +124,11 @@ export function detectFrameGrid(
     return { width: best.w, height: best.h, columns: best.cols, rows: best.rows };
   }
 
-  // 4) Try any square size that evenly divides, prefer standard sizes
-  const trySizes = [16, 24, 32, 48, 64, 80, 96, 128];
+  // 4) Try any square size that evenly divides, prefer canonical presets
   const squareCandidates: Array<{ size: number; frames: number; isStandard: boolean }> = [];
-  for (const size of trySizes) {
+  for (const size of SLICER_DETECT_TRY_SIZES) {
     if (width % size === 0 && height % size === 0) {
-      const isStandard = SPRITE_SIZES.some((s) => s.width === size && s.height === size);
+      const isStandard = SLICER_SQUARE_PRESETS.some((s) => s.width === size);
       squareCandidates.push({ size, frames: (width / size) * (height / size), isStandard });
     }
   }
@@ -155,8 +158,8 @@ export function detectFrameGrid(
 }
 
 /**
- * If a gutter-detected size is close to a standard SPRITE_SIZES entry
- * that also evenly divides the image, prefer the standard size.
+ * If a gutter-detected size is close to a canonical SLICER_FRAME_PRESETS entry
+ * that also evenly divides the image, prefer the canonical preset.
  */
 function findBestStandardSize(
   imgW: number,
@@ -165,7 +168,7 @@ function findBestStandardSize(
   detectedH: number
 ): { width: number; height: number; columns: number; rows: number } | null {
   const tolerance = 4; // px
-  for (const s of SPRITE_SIZES) {
+  for (const s of SLICER_FRAME_PRESETS) {
     if (
       Math.abs(s.width - detectedW) <= tolerance &&
       Math.abs(s.height - detectedH) <= tolerance &&

@@ -1,17 +1,16 @@
 'use client';
 
+// TODO: This component appears unused; verify and remove in a future session.
+
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Maximize2, Check, Lock, Unlock, AlertCircle } from 'lucide-react';
 import { loadImage, resizePixelArt } from '@/lib/spriteUtils';
+import { SLICER_FRAME_PRESETS } from '@/lib/constants';
 import Button from '@/components/ui/Button';
 
-const PRESETS = [
-  { w: 16, h: 16 },
-  { w: 32, h: 32 },
-  { w: 48, h: 48 },
-  { w: 64, h: 64 },
-  { w: 128, h: 128 },
-] as const;
+const PRESETS: ReadonlyArray<{ w: number; h: number }> = SLICER_FRAME_PRESETS
+  .filter((p) => p.width === p.height)
+  .map((p) => ({ w: p.width, h: p.height }));
 
 interface ImageResizerProps {
   sourceDataUrl: string;

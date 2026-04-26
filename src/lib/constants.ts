@@ -9,6 +9,30 @@ export const SPRITE_SIZES = [
   { label: '128x128', width: 128, height: 128, description: 'Large/detailed sprites' },
 ] as const;
 
+/**
+ * Canonical slicer frame size presets — single source of truth.
+ *
+ * Add a new preset HERE, and all slicer UIs (SlicerConfig pills, FrameSizeResizer
+ * size buttons, SpriteDetector target-size pills, ImageResizer presets) pick it
+ * up automatically.
+ */
+export const SLICER_FRAME_PRESETS: Array<{ label: string; width: number; height: number }> = [
+  { label: '16×16',   width: 16,  height: 16  },
+  { label: '24×32',   width: 24,  height: 32  },
+  { label: '32×32',   width: 32,  height: 32  },
+  { label: '48×48',   width: 48,  height: 48  },
+  { label: '48×64',   width: 48,  height: 64  },
+  { label: '64×64',   width: 64,  height: 64  },
+  { label: '128×128', width: 128, height: 128 },
+  { label: '256×256', width: 256, height: 256 },
+];
+
+/**
+ * Square-only sizes used by `detectFrameGrid`'s iterative fallback.
+ * Kept ascending — order can matter inside the detector's iteration.
+ */
+export const SLICER_DETECT_TRY_SIZES: number[] = [16, 24, 32, 48, 64, 80, 96, 128, 256];
+
 // Animation type presets
 export const ANIMATION_TYPES = [
   { id: 'idle', label: 'Idle', defaultFrames: 4, defaultFps: 6, description: 'Breathing/subtle movement', defaultDirectional: false },
