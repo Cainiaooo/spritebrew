@@ -429,7 +429,7 @@ export default function SlicerConfig({
         <div className="rounded-lg border border-border-default bg-bg-elevated p-3 overflow-auto">
           <canvas
             ref={canvasRef}
-            className="block mx-auto"
+            className="block mx-auto pixel-art-render"
             style={{ imageRendering: 'pixelated' }}
           />
         </div>

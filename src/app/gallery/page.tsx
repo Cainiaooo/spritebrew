@@ -221,7 +221,7 @@ function GalleryCard({ entry, onDownload, onSendToSlicer, onDelete }: GalleryCar
           <img
             src={imgSrc}
             alt={entry.prompt}
-            className="max-w-full max-h-full object-contain"
+            className="max-w-full max-h-full object-contain pixel-art-render"
             style={{ imageRendering: 'pixelated' }}
           />
         )}

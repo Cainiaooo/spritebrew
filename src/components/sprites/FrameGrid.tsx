@@ -120,7 +120,7 @@ export default function FrameGrid({ frameDataUrls }: FrameGridProps) {
                     <img
                       src={dataUrl}
                       alt={`Frame ${idx}`}
-                      className="absolute inset-0 w-full h-full object-contain"
+                      className="absolute inset-0 w-full h-full object-contain pixel-art-render"
                       style={{ imageRendering: 'pixelated' }}
                     />
                   )}

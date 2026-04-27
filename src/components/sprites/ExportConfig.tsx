@@ -477,6 +477,7 @@ export default function ExportConfig() {
         <div className="rounded-lg border border-border-default bg-bg-elevated p-4 flex justify-center overflow-auto">
           <canvas
             ref={previewCanvasRef}
+            className="pixel-art-render"
             style={{ imageRendering: 'pixelated', display: 'block' }}
           />
         </div>

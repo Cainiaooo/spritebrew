@@ -130,7 +130,7 @@ export default function GenerationResult({ onReset }: GenerationResultProps) {
                 src={displayImageDataUrl ?? generatedImageDataUrl}
                 alt="Previous result"
                 style={{ imageRendering: 'pixelated' }}
-                className="block max-h-48"
+                className="block max-h-48 pixel-art-render"
               />
             </div>
           </div>
@@ -222,7 +222,7 @@ export default function GenerationResult({ onReset }: GenerationResultProps) {
                     <img
                       src={entry.thumbnailDataUrl}
                       alt={entry.prompt}
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain pixel-art-render"
                       style={{ imageRendering: 'pixelated' }}
                     />
                   </div>
@@ -260,7 +260,7 @@ export default function GenerationResult({ onReset }: GenerationResultProps) {
               <img
                 src={originalCharacterDataUrl}
                 alt="Original character"
-                className="block w-16 h-16 object-contain"
+                className="block w-16 h-16 object-contain pixel-art-render"
                 style={{ imageRendering: 'pixelated' }}
               />
             </div>
@@ -286,6 +286,7 @@ export default function GenerationResult({ onReset }: GenerationResultProps) {
           <img
             src={displayImageDataUrl ?? generatedImageDataUrl}
             alt="Generated sprite sheet"
+            className="pixel-art-render"
             style={{
               imageRendering: 'pixelated',
               transform: `scale(${zoom})`,
@@ -431,7 +432,7 @@ export default function GenerationResult({ onReset }: GenerationResultProps) {
                 <img
                   src={entry.thumbnailDataUrl}
                   alt={entry.prompt}
-                  className="w-full h-full object-contain"
+                  className="w-full h-full object-contain pixel-art-render"
                   style={{ imageRendering: 'pixelated' }}
                 />
               </Link>

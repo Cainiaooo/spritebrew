@@ -264,6 +264,7 @@ export default function AnimationPlayer({ frameDataUrls }: AnimationPlayerProps)
         <div className="rounded-lg border border-border-default bg-bg-elevated p-3 inline-block">
           <canvas
             ref={canvasRef}
+            className="pixel-art-render"
             style={{ imageRendering: 'pixelated', display: 'block' }}
           />
         </div>

@@ -4,17 +4,23 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Application,
   AnimatedSprite,
+  Container,
+  Graphics,
   Texture,
   TilingSprite,
   TextureSource,
 } from 'pixi.js';
-import { ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { DropShadowFilter } from 'pixi-filters';
+import { ChevronDown, ChevronUp, Eye, EyeOff, Maximize2 } from 'lucide-react';
 import { DEMO_CONTROLS } from '@/lib/constants';
 import { useSpriteStore } from '@/stores/spriteStore';
 import type { SpriteAnimation } from '@/lib/types';
 
 // Force nearest-neighbor globally for pixel art
 TextureSource.defaultOptions.scaleMode = 'nearest';
+
+const VALID_WORLD_SCALES = [1, 2, 4, 8] as const;
+type WorldScale = typeof VALID_WORLD_SCALES[number];
 
 type CharState = 'idle' | 'walking' | 'running' | 'attacking' | 'jumping' | 'hurt';
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -151,14 +157,19 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
+  const worldRef = useRef<Container | null>(null);
+  const shadowRef = useRef<Graphics | null>(null);
   const spritesRef = useRef<Map<string, AnimatedSprite>>(new Map());
   const bgSpriteRef = useRef<TilingSprite | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const stateRef = useRef<CharState>('idle');
+  // posRef holds WORLD-space coordinates (pre-scale). Default = visible center
+  // at scale=1; re-centered when scale changes via the worldScale effect.
   const posRef = useRef({ x: CANVAS_W / 2, y: CANVAS_H / 2 });
   const facingRef = useRef<1 | -1>(1);
   const directionRef = useRef<Direction>('down');
   const lockedRef = useRef(false);
+  const worldScaleRef = useRef<WorldScale>(2);
 
   const animMapsRef = useRef<ReturnType<typeof buildAnimMaps>>({
     hasDirectional: false,
@@ -171,6 +182,9 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
   const [bgPreset, setBgPreset] = useState<BgPreset>('grid');
   const [showOverlay, setShowOverlay] = useState(true);
   const [showControls, setShowControls] = useState(true);
+  // Default 2× — most generated sprites are 64–128 and 2× reads well on 1280×720.
+  const [worldScale, setWorldScale] = useState<WorldScale>(2);
+  const [showcaseMode, setShowcaseMode] = useState(false);
   const [overlayInfo, setOverlayInfo] = useState({
     animation: 'idle',
     state: 'idle' as CharState,
@@ -319,6 +333,7 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
         backgroundColor: 0x121010,
         resolution: 1,
         antialias: false,
+        roundPixels: true,
         canvas: document.createElement('canvas'),
       });
 
@@ -348,7 +363,17 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
       containerRef.current!.innerHTML = '';
       containerRef.current!.appendChild(cv);
 
-      // Background
+      // World container — holds bg + shadow + sprites. Scaled by worldScale
+      // so 1×/2×/4×/8× zoom preserves pixel-perfect rendering. Math.floor()
+      // applied to the user-facing scale keeps it on integer multiples.
+      const world = new Container();
+      world.scale.set(Math.floor(worldScaleRef.current));
+      app.stage.addChild(world);
+      worldRef.current = world;
+
+      // Background — sized to the largest visible world area (CANVAS_W × CANVAS_H
+      // at scale=1). At higher scales the bg overshoots the canvas but since it's
+      // a TilingSprite, the visible portion still fills cleanly.
       const bgCanvas = createBgCanvas(bgPreset);
       const bgTexture = Texture.from(bgCanvas);
       const bgSprite = new TilingSprite({
@@ -356,14 +381,20 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
         width: CANVAS_W,
         height: CANVAS_H,
       });
-      app.stage.addChild(bgSprite);
+      world.addChild(bgSprite);
       bgSpriteRef.current = bgSprite;
+
+      // Ground shadow — single Graphics ellipse parented to world, follows
+      // the active sprite's feet. Added BEFORE sprites so it renders beneath.
+      const shadow = new Graphics();
+      shadow.ellipse(0, 0, 16, 5);
+      shadow.fill({ color: 0x000000, alpha: 0.35 });
+      shadow.visible = false;
+      world.addChild(shadow);
+      shadowRef.current = shadow;
 
       // Load textures for each animation
       const spriteMap = new Map<string, AnimatedSprite>();
-      const frameW = spriteSheet?.frameWidth ?? 32;
-      const frameH = spriteSheet?.frameHeight ?? 32;
-      const spriteScale = Math.min(8, Math.max(4, Math.floor(160 / Math.max(frameW, frameH))));
 
       for (const anim of animations) {
         if (anim.frames.length === 0) continue;
@@ -387,15 +418,26 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
 
         const animSprite = new AnimatedSprite(textures);
         animSprite.anchor.set(0.5, 0.5);
-        animSprite.x = Math.round(posRef.current.x);
-        animSprite.y = Math.round(posRef.current.y);
-        animSprite.scale.set(spriteScale);
+        animSprite.x = Math.floor(posRef.current.x);
+        animSprite.y = Math.floor(posRef.current.y);
+        animSprite.scale.set(1);
         animSprite.animationSpeed = anim.fps / 60;
         animSprite.loop = true;
         animSprite.visible = false;
+        // Drop shadow on each sprite (one-time, persists across visibility swaps).
+        // Filter is configured for soft elevation, not pixel-art-perfect.
+        animSprite.filters = [
+          new DropShadowFilter({
+            offset: { x: 3, y: 5 },
+            blur: 2,
+            alpha: 0.45,
+            color: 0x000000,
+            quality: 4,
+          }),
+        ];
         animSprite.play();
 
-        app.stage.addChild(animSprite);
+        world.addChild(animSprite);
         spriteMap.set(anim.id, animSprite);
       }
 
@@ -454,8 +496,11 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
             posRef.current.x += Math.round((dx / len) * speed);
             posRef.current.y += Math.round((dy / len) * speed);
 
-            posRef.current.x = Math.max(0, Math.min(CANVAS_W, posRef.current.x));
-            posRef.current.y = Math.max(0, Math.min(CANVAS_H, posRef.current.y));
+            // Boundary clamp uses scale-adjusted world bounds so the sprite
+            // stays inside the visible portion at any zoom level.
+            const ws = worldScaleRef.current;
+            posRef.current.x = Math.max(0, Math.min(CANVAS_W / ws, posRef.current.x));
+            posRef.current.y = Math.max(0, Math.min(CANVAS_H / ws, posRef.current.y));
 
             // Update direction
             if (hasDirectional) {
@@ -491,12 +536,13 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
           targetAnim.type !== 'idle';
 
         // Hide all, show active
+        let activeSprite: AnimatedSprite | null = null;
         for (const [animId, sprite] of spriteMap) {
           const isActive = targetAnimId === animId;
           sprite.visible = isActive;
           if (isActive) {
-            sprite.x = Math.round(posRef.current.x);
-            sprite.y = Math.round(posRef.current.y);
+            sprite.x = Math.floor(posRef.current.x);
+            sprite.y = Math.floor(posRef.current.y);
 
             if (hasDirectional) {
               const absScale = Math.abs(sprite.scale.x);
@@ -510,7 +556,18 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
             if (storeAnim) {
               sprite.animationSpeed = idleFallback ? 0 : storeAnim.fps / 60;
             }
+            activeSprite = sprite;
           }
+        }
+
+        // Ground shadow follows the active sprite's feet
+        if (shadowRef.current && activeSprite) {
+          const halfH = (activeSprite.height || 32) / 2;
+          shadowRef.current.x = activeSprite.x;
+          shadowRef.current.y = activeSprite.y + Math.floor(halfH);
+          shadowRef.current.visible = true;
+        } else if (shadowRef.current) {
+          shadowRef.current.visible = false;
         }
 
         // If resolved animation OR idle-fallback flag changed, restart playback.
@@ -568,6 +625,46 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
     bgSprite.texture = Texture.from(bgCanvas);
   }, [bgPreset, createBgCanvas]);
 
+  // Apply world scale + re-center sprite to the new visible bounds.
+  // Math.floor() guarantees integer scaling for crisp pixel rendering.
+  useEffect(() => {
+    worldScaleRef.current = worldScale;
+    const world = worldRef.current;
+    if (world) {
+      world.scale.set(Math.floor(worldScale));
+    }
+    // Re-center sprite into the new scale-adjusted world bounds.
+    posRef.current = {
+      x: CANVAS_W / 2 / worldScale,
+      y: CANVAS_H / 2 / worldScale,
+    };
+  }, [worldScale]);
+
+  // Showcase mode — fullscreen the canvas + hide chrome via conditional render.
+  useEffect(() => {
+    const cv = appRef.current?.canvas as HTMLCanvasElement | undefined;
+    if (!showcaseMode) {
+      if (typeof document !== 'undefined' && document.fullscreenElement) {
+        document.exitFullscreen().catch(() => { /* ignore */ });
+      }
+      return;
+    }
+    if (cv?.requestFullscreen) {
+      cv.requestFullscreen().catch(() => { /* user rejected, ignore */ });
+    }
+  }, [showcaseMode]);
+
+  // Listen for Escape-exiting fullscreen — keep showcase state in sync.
+  useEffect(() => {
+    const onFsChange = () => {
+      if (typeof document === 'undefined') return;
+      if (!document.fullscreenElement && showcaseMode) setShowcaseMode(false);
+    };
+    if (typeof document === 'undefined') return;
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [showcaseMode]);
+
   // Keyboard handling
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -585,9 +682,22 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
       }
 
       if (e.key === 'r' || e.key === 'R') {
-        posRef.current = { x: CANVAS_W / 2, y: CANVAS_H / 2 };
+        // Re-center using the current world scale's bounds
+        const ws = worldScaleRef.current;
+        posRef.current = { x: CANVAS_W / 2 / ws, y: CANVAS_H / 2 / ws };
         return;
       }
+
+      if (e.key === 'f' || e.key === 'F') {
+        setShowcaseMode((v) => !v);
+        return;
+      }
+
+      // Scale toggle — keys 1, 2, 4, 8
+      if (e.key === '1') { setWorldScale(1); return; }
+      if (e.key === '2') { setWorldScale(2); return; }
+      if (e.key === '4') { setWorldScale(4); return; }
+      if (e.key === '8') { setWorldScale(8); return; }
 
       if (!lockedRef.current) {
         if (e.key === ' ') {
@@ -665,8 +775,8 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
       >
         <div ref={containerRef} className="w-full h-full" />
 
-        {/* Info overlay */}
-        {showOverlay && (
+        {/* Info overlay — hidden in showcase mode */}
+        {showOverlay && !showcaseMode && (
           <div className="absolute top-2 left-2 rounded bg-black/70 px-3 py-2 pointer-events-none">
             <p className="text-[10px] font-mono text-accent-amber">
               {overlayInfo.animation}
@@ -697,40 +807,75 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
         )}
       </div>
 
-      {/* Background selector */}
-      <div className="flex items-center gap-2">
-        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
-          Background
-        </label>
-        {([
-          { id: 'grid', label: 'Grid' },
-          { id: 'grass', label: 'Grass' },
-          { id: 'dungeon', label: 'Dungeon' },
-          { id: 'black', label: 'Black' },
-          { id: 'white', label: 'White' },
-        ] as const).map(({ id, label }) => (
-          <button
-            key={id}
-            onClick={() => setBgPreset(id)}
-            className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
-              ${bgPreset === id
-                ? 'bg-accent-amber text-bg-primary'
-                : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
-              }`}
-          >
-            {label}
-          </button>
-        ))}
-        <button
-          onClick={() => setShowOverlay((v) => !v)}
-          className="ml-auto p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover cursor-pointer"
-          title={showOverlay ? 'Hide overlay (H)' : 'Show overlay (H)'}
-        >
-          {showOverlay ? <Eye size={14} /> : <EyeOff size={14} />}
-        </button>
-      </div>
+      {/* Toolbar (background + scale + showcase) — hidden in showcase mode */}
+      {!showcaseMode && (
+        <>
+          {/* Background selector */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
+              Background
+            </label>
+            {([
+              { id: 'grid', label: 'Grid' },
+              { id: 'grass', label: 'Grass' },
+              { id: 'dungeon', label: 'Dungeon' },
+              { id: 'black', label: 'Black' },
+              { id: 'white', label: 'White' },
+            ] as const).map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setBgPreset(id)}
+                className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
+                  ${bgPreset === id
+                    ? 'bg-accent-amber text-bg-primary'
+                    : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
+                  }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button
+              onClick={() => setShowOverlay((v) => !v)}
+              className="ml-auto p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover cursor-pointer"
+              title={showOverlay ? 'Hide overlay (H)' : 'Show overlay (H)'}
+            >
+              {showOverlay ? <Eye size={14} /> : <EyeOff size={14} />}
+            </button>
+          </div>
 
-      {/* Controls reference */}
+          {/* Scale toggle (1×/2×/4×/8×) + Showcase mode button */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
+              Scale
+            </label>
+            {VALID_WORLD_SCALES.map((s) => (
+              <button
+                key={s}
+                onClick={() => setWorldScale(s)}
+                className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
+                  ${worldScale === s
+                    ? 'bg-accent-amber text-bg-primary'
+                    : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
+                  }`}
+              >
+                {s}×
+              </button>
+            ))}
+            <button
+              onClick={() => setShowcaseMode(true)}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
+                bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle"
+              title="Showcase mode (F)"
+            >
+              <Maximize2 size={12} />
+              Showcase
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Controls reference — hidden in showcase mode */}
+      {!showcaseMode && (
       <div className="rounded-lg border border-border-default bg-bg-surface">
         <button
           onClick={() => setShowControls((v) => !v)}
@@ -786,6 +931,33 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
                   Toggle info overlay
                 </span>
               </div>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {(['1', '2', '4', '8'] as const).map((k) => (
+                    <kbd
+                      key={k}
+                      className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5
+                        rounded bg-bg-elevated border border-border-default text-[10px] font-mono text-text-primary"
+                    >
+                      {k}
+                    </kbd>
+                  ))}
+                </div>
+                <span className="text-[10px] font-mono text-text-muted">
+                  Set scale (1×/2×/4×/8×)
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <kbd
+                  className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5
+                    rounded bg-bg-elevated border border-border-default text-[10px] font-mono text-text-primary"
+                >
+                  F
+                </kbd>
+                <span className="text-[10px] font-mono text-text-muted">
+                  Showcase / fullscreen
+                </span>
+              </div>
             </div>
             <p className="text-[9px] font-mono text-text-muted/70 pt-1 border-t border-border-subtle">
               Arrow keys control direction when directional animations (Walk Up/Down/Left/Right) are available.
@@ -794,6 +966,14 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Showcase mode hint — only visible when in showcase */}
+      {showcaseMode && (
+        <p className="text-center text-[10px] font-mono text-text-muted">
+          Showcase mode &middot; Press <kbd className="px-1 rounded bg-bg-elevated border border-border-default">F</kbd> or <kbd className="px-1 rounded bg-bg-elevated border border-border-default">Esc</kbd> to exit
+        </p>
+      )}
     </div>
   );
 }
