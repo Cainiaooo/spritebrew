@@ -259,13 +259,20 @@ export default function AnimationPlayer({ frameDataUrls }: AnimationPlayerProps)
         </div>
       )}
 
-      {/* Canvas */}
-      <div className="flex justify-center">
-        <div className="rounded-lg border border-border-default bg-bg-elevated p-3 inline-block">
+      {/* Canvas — responsive: intrinsic canvas dimensions become a CEILING via
+          maxWidth: 100% so the canvas downscales to fit the wrapper instead of
+          overflowing the viewport at high zoom levels. */}
+      <div className="flex justify-center w-full">
+        <div className="rounded-lg border border-border-default bg-bg-elevated p-3 max-w-full">
           <canvas
             ref={canvasRef}
             className="pixel-art-render"
-            style={{ imageRendering: 'pixelated', display: 'block' }}
+            style={{
+              imageRendering: 'pixelated',
+              display: 'block',
+              maxWidth: '100%',
+              height: 'auto',
+            }}
           />
         </div>
       </div>

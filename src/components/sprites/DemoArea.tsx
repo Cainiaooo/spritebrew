@@ -160,6 +160,9 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
   const worldRef = useRef<Container | null>(null);
   const shadowRef = useRef<Graphics | null>(null);
   const spritesRef = useRef<Map<string, AnimatedSprite>>(new Map());
+  // Currently-visible sprite — updated by the game loop, read by clamp logic
+  // on the next tick to subtract halfSprite from the world-bounds.
+  const activeSpriteRef = useRef<AnimatedSprite | null>(null);
   const bgSpriteRef = useRef<TilingSprite | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const stateRef = useRef<CharState>('idle');
@@ -496,11 +499,17 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
             posRef.current.x += Math.round((dx / len) * speed);
             posRef.current.y += Math.round((dy / len) * speed);
 
-            // Boundary clamp uses scale-adjusted world bounds so the sprite
-            // stays inside the visible portion at any zoom level.
+            // Boundary clamp uses scale-adjusted world bounds AND subtracts
+            // halfSprite so the sprite stays fully visible (anchor is centered
+            // at 0.5,0.5 — without the half-offset, half the sprite would clip
+            // offscreen at the extremes). Falls back to no offset before the
+            // first sprite is visible.
             const ws = worldScaleRef.current;
-            posRef.current.x = Math.max(0, Math.min(CANVAS_W / ws, posRef.current.x));
-            posRef.current.y = Math.max(0, Math.min(CANVAS_H / ws, posRef.current.y));
+            const activeSprite = activeSpriteRef.current;
+            const halfW = activeSprite ? (activeSprite.width / 2) / ws : 0;
+            const halfH = activeSprite ? (activeSprite.height / 2) / ws : 0;
+            posRef.current.x = Math.max(halfW, Math.min(CANVAS_W / ws - halfW, posRef.current.x));
+            posRef.current.y = Math.max(halfH, Math.min(CANVAS_H / ws - halfH, posRef.current.y));
 
             // Update direction
             if (hasDirectional) {
@@ -569,6 +578,10 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
         } else if (shadowRef.current) {
           shadowRef.current.visible = false;
         }
+
+        // Publish the active sprite to the ref so next tick's clamp can read
+        // its dimensions for the half-sprite boundary offset.
+        activeSpriteRef.current = activeSprite;
 
         // If resolved animation OR idle-fallback flag changed, restart playback.
         // Tracking idleFallback transitions catches the case where the same

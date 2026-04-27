@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Press_Start_2P, JetBrains_Mono } from 'next/font/google';
 import ClerkClientProvider from '@/components/layout/ClerkClientProvider';
 import AppShell from '@/components/layout/AppShell';
@@ -21,6 +21,11 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: 'SpriteBrew — AI-Powered Pixel Art Sprite Sheets',
   description: 'Describe a character, pick a moveset, and let AI generate game-ready animations. Upload your own art or create from scratch. Export to Unity, Godot, or GameMaker in one click.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({
