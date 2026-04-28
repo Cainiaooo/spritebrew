@@ -10,7 +10,7 @@
  */
 
 import { useState } from 'react';
-import { useUser } from '@clerk/react';
+import { useUser, useAuth } from '@clerk/react';
 
 const ADMIN_USER_ID = 'user_3C34WAUmVRoHvKiyhYSNrMt4dvT';
 
@@ -35,6 +35,7 @@ interface ProbeResponse {
 
 export default function TestReferencesPage() {
   const { user, isLoaded } = useUser();
+  const { getToken } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
   const [response, setResponse] = useState<ProbeResponse | null>(null);
@@ -55,10 +56,23 @@ export default function TestReferencesPage() {
     setIsLoading(true);
     setResponse(null);
     try {
+      const token = await getToken();
+      if (!token) {
+        setResponse({
+          status: 0,
+          body: null,
+          error: 'No Clerk session token available. Try refreshing the page.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const res = await fetch('/api/generate', {
         method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(TEST_REQUEST_BODY),
       });
 
