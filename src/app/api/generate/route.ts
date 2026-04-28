@@ -74,6 +74,15 @@ const ACTION_PROMPT_PREFIX: Record<string, string> = {
 
 const FALLBACK_STYLE = 'animation__any_animation';
 
+// RD API parameter name for reference images.
+// Wrapped in a constant per recon recommendation — if RD ever renames this,
+// change one line instead of hunting through the route.
+const RD_REFERENCE_IMAGES_PARAM = 'reference_images';
+const RD_MAX_REFERENCE_IMAGES = 9;
+// 12MB ceiling on total reference payload, expressed in base64 string length
+// (base64 inflates raw bytes by ~4/3, so 12MB raw ≈ 16MB base64 chars).
+const REF_TOTAL_BASE64_BUDGET = 12 * 1024 * 1024 * 4 / 3;
+
 interface GenerateBody {
   prompt?: string;
   // Create New fields
@@ -82,7 +91,9 @@ interface GenerateBody {
   width?: number;
   height?: number;
   removeBg?: boolean;
-  referenceImage?: string;
+  /** Optional base64-encoded reference images (no `data:` prefix). Max 9.
+   *  Only honoured for rd_pro__* styles per RD's API. */
+  referenceImages?: string[];
   // Animate My Character fields
   mode?: 'create' | 'animate';
   inputImage?: string;
@@ -112,7 +123,7 @@ function startHeartbeat(writer: WritableStreamDefaultWriter<Uint8Array>, ms = 15
 // ── POST handler ──
 
 import { debitTokens, creditTokens } from '@/lib/tokenBalance';
-import { getTokenCost, getResolutionMode } from '@/lib/styleRegistry';
+import { getTokenCost, getResolutionMode, GENERATION_STYLES } from '@/lib/styleRegistry';
 import { getAccountStatus } from '@/lib/accountLock';
 
 export async function POST(request: Request) {
@@ -237,6 +248,31 @@ function validateCreateBody(body: GenerateBody): string | null {
       }
     }
   }
+
+  // Reference images — only valid for styles flagged supportsReferenceImages.
+  if (body.referenceImages && body.referenceImages.length > 0) {
+    const style = GENERATION_STYLES.find((s) => s.promptStyle === ps);
+    if (!style?.supportsReferenceImages) {
+      return `Style "${ps}" does not support reference images. Use a Pro style.`;
+    }
+    if (body.referenceImages.length > RD_MAX_REFERENCE_IMAGES) {
+      return `Maximum ${RD_MAX_REFERENCE_IMAGES} reference images. Received ${body.referenceImages.length}.`;
+    }
+    for (let i = 0; i < body.referenceImages.length; i++) {
+      const img = body.referenceImages[i];
+      if (typeof img !== 'string' || img.length === 0) {
+        return `Reference image ${i + 1} is not a valid string.`;
+      }
+      if (img.startsWith('data:')) {
+        return `Reference image ${i + 1} includes a data: prefix. Strip it before sending.`;
+      }
+    }
+    const totalSize = body.referenceImages.reduce((sum, img) => sum + img.length, 0);
+    if (totalSize > REF_TOTAL_BASE64_BUDGET) {
+      return 'Total reference image payload too large. Reduce image count or size.';
+    }
+  }
+
   return null;
 }
 
@@ -290,6 +326,24 @@ async function callRD(payload: Record<string, unknown>): Promise<Record<string, 
     throw new Error('Generation completed but no image was returned.');
   }
 
+  // Cost-verification probe — temporary, remove after Phase 1 verification.
+  // RD docs don't specify whether reference_images change per-call cost. Log
+  // every candidate cost field plus the full key set so we can identify the
+  // actual field name from prod logs.
+  const refs = payload[RD_REFERENCE_IMAGES_PARAM];
+  if (Array.isArray(refs) && refs.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log('[REF_IMAGE_COST_PROBE]', JSON.stringify({
+      refCount: refs.length,
+      promptStyle: payload.prompt_style,
+      width: payload.width,
+      height: payload.height,
+      rdBalanceCost: data.balance_cost ?? data.credits_cost ?? 'unknown',
+      rdResponseKeys: Object.keys(data),
+      timestamp: new Date().toISOString(),
+    }));
+  }
+
   return {
     success: true,
     imageUrl: `data:image/png;base64,${data.base64_images[0]}`,
@@ -316,6 +370,12 @@ async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
 
   if (body.removeBg) payload.remove_bg = true;
   if (isAnimation) payload.return_spritesheet = true;
+
+  // Forward reference images only when present — keeps non-reference calls
+  // unchanged on the RD side.
+  if (body.referenceImages && body.referenceImages.length > 0) {
+    payload[RD_REFERENCE_IMAGES_PARAM] = body.referenceImages;
+  }
 
   return callRD(payload);
 }

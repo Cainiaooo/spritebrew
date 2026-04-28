@@ -35,6 +35,9 @@ export interface GenerationStyle {
   tokenCost: number;
   isAnimation: boolean;
   supportsRemoveBg: boolean;
+  /** Whether RD's `reference_images` parameter is honoured for this style.
+   *  Only the rd_pro__* family supports references per RD docs. */
+  supportsReferenceImages?: boolean;
   resolutionMode?: ResolutionMode;
 }
 
@@ -45,48 +48,56 @@ export const GENERATION_STYLES: GenerationStyle[] = [
     promptStyle: 'rd_pro__default', tier: 'pro', category: 'characters',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: true,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-fantasy', label: 'Fantasy', description: 'Fantasy-themed characters and scenes',
     promptStyle: 'rd_pro__fantasy', tier: 'pro', category: 'characters',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: true,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-platformer', label: 'Platformer', description: 'Side-scrolling platformer characters',
     promptStyle: 'rd_pro__platformer', tier: 'pro', category: 'characters',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: true,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-spritesheet', label: 'Sprite Collection', description: 'Multiple assets in the same style on one sheet',
     promptStyle: 'rd_pro__spritesheet', tier: 'pro', category: 'characters',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: false,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-inventory', label: 'Inventory Items', description: 'RPG-style inventory item grids',
     promptStyle: 'rd_pro__inventory_items', tier: 'pro', category: 'items',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: false,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-fps-weapon', label: 'FPS Weapon', description: 'First-person perspective weapons and items',
     promptStyle: 'rd_pro__fps_weapon', tier: 'pro', category: 'items',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: true,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-hex-tiles', label: 'Hexagonal Tiles', description: 'Hexagonal tiles for game maps',
     promptStyle: 'rd_pro__hexagonal_tiles', tier: 'pro', category: 'tiles',
     defaultWidth: 256, defaultHeight: 256, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: false,
+    supportsReferenceImages: true,
   },
   {
     id: 'pro-typography', label: 'Typography', description: 'Pixel art logos, buttons, and text elements',
     promptStyle: 'rd_pro__typography', tier: 'pro', category: 'ui',
     defaultWidth: 256, defaultHeight: 128, minSize: 96, maxSize: 256,
     fixedSize: false, costPerGeneration: 0.22, tokenCost: 40, isAnimation: false, supportsRemoveBg: true,
+    supportsReferenceImages: true,
   },
 
   // ── RD PLUS ($0.025-0.06/image, 16-192px) — 10 tokens ──
