@@ -326,24 +326,6 @@ async function callRD(payload: Record<string, unknown>): Promise<Record<string, 
     throw new Error('Generation completed but no image was returned.');
   }
 
-  // Cost-verification probe — temporary, remove after Phase 1 verification.
-  // RD docs don't specify whether reference_images change per-call cost. Log
-  // every candidate cost field plus the full key set so we can identify the
-  // actual field name from prod logs.
-  const refs = payload[RD_REFERENCE_IMAGES_PARAM];
-  if (Array.isArray(refs) && refs.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log('[REF_IMAGE_COST_PROBE]', JSON.stringify({
-      refCount: refs.length,
-      promptStyle: payload.prompt_style,
-      width: payload.width,
-      height: payload.height,
-      rdBalanceCost: data.balance_cost ?? data.credits_cost ?? 'unknown',
-      rdResponseKeys: Object.keys(data),
-      timestamp: new Date().toISOString(),
-    }));
-  }
-
   return {
     success: true,
     imageUrl: `data:image/png;base64,${data.base64_images[0]}`,

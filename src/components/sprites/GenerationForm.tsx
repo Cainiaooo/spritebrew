@@ -5,6 +5,7 @@ import { Sparkles, X, Check, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@clerk/react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
+import ReferenceImagesPanel from '@/components/sprites/ReferenceImagesPanel';
 import {
   GENERATION_STYLES,
   getStyleById,
@@ -101,11 +102,14 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
   const [customWidth, setCustomWidth] = useState(256);
   const [customHeight, setCustomHeight] = useState(256);
   const [removeBg, setRemoveBg] = useState(true);
+  const [referenceImages, setReferenceImages] = useState<string[]>([]);
 
   const selectedStyle = useMemo(
     () => getStyleById(selectedStyleId) ?? GENERATION_STYLES[0],
     [selectedStyleId]
   );
+
+  const referencesEnabled = selectedStyle.supportsReferenceImages === true;
 
   const tokenCost = selectedStyle.tokenCost;
   const insufficientTokens = tokenBalance < tokenCost;
@@ -139,6 +143,10 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
 
       if (removeBg && selectedStyle.supportsRemoveBg) {
         body.removeBg = true;
+      }
+
+      if (referenceImages.length > 0 && referencesEnabled) {
+        body.referenceImages = referenceImages;
       }
 
       const sessionToken = await getToken();
@@ -175,8 +183,9 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
     }
   }, [
     prompt, selectedStyle, selectedStyleId, effectiveWidth, effectiveHeight,
-    removeBg, isGenerating, tokenCost, getToken, setGenerating, setGeneratingAction,
-    setGenerationError, setGeneratedImage, setGenerationStyle, setTokenBalance, fetchBalance, onGenerated,
+    removeBg, referenceImages, referencesEnabled, isGenerating, tokenCost, getToken,
+    setGenerating, setGeneratingAction, setGenerationError, setGeneratedImage,
+    setGenerationStyle, setTokenBalance, fetchBalance, onGenerated,
   ]);
 
   return (
@@ -266,6 +275,13 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
           For animating an existing character, use the Animate My Character tab.
         </p>
       </div>
+
+      {/* Reference Images — Pro styles only */}
+      <ReferenceImagesPanel
+        referenceImages={referenceImages}
+        onChange={setReferenceImages}
+        enabled={referencesEnabled}
+      />
 
       {/* Size controls — only if not fixed */}
       <div>
