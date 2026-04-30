@@ -5,6 +5,7 @@ import { Sparkles, X, Check, Loader2, AlertCircle } from 'lucide-react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
 import ReferenceImagesPanel from '@/components/sprites/ReferenceImagesPanel';
+import OutfitPicker from '@/components/sprites/OutfitPicker';
 import {
   GENERATION_STYLES,
   getStyleById,
@@ -59,10 +60,13 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
   const isGenerating = useSpriteStore((s) => s.isGenerating);
   const generationError = useSpriteStore((s) => s.generationError);
 
+  const outfit = useSpriteStore((s) => s.outfit);
+  const setOutfit = useSpriteStore((s) => s.setOutfit);
+
   const [prompt, setPrompt] = useState('');
-  const [selectedStyleId, setSelectedStyleId] = useState('plus-classic');
-  const [customWidth, setCustomWidth] = useState(256);
-  const [customHeight, setCustomHeight] = useState(256);
+  const [selectedStyleId, setSelectedStyleId] = useState(GENERATION_STYLES[0].id);
+  const [customWidth, setCustomWidth] = useState(GENERATION_STYLES[0].defaultWidth);
+  const [customHeight, setCustomHeight] = useState(GENERATION_STYLES[0].defaultHeight);
   const [removeBg, setRemoveBg] = useState(true);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
 
@@ -105,6 +109,10 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         body.referenceImages = referenceImages;
       }
 
+      if (outfit && Object.keys(outfit).length > 0) {
+        body.outfit = outfit;
+      }
+
       const { fetchGenerationSSE } = await import('@/lib/sseClient');
       const data = await fetchGenerationSSE(body, null);
 
@@ -126,7 +134,7 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
     }
   }, [
     prompt, selectedStyle, selectedStyleId, effectiveWidth, effectiveHeight,
-    removeBg, referenceImages, referencesEnabled, isGenerating,
+    removeBg, referenceImages, referencesEnabled, outfit, isGenerating,
     setGenerating, setGeneratingAction, setGenerationError, setGeneratedImage,
     setGenerationStyle, onGenerated,
   ]);
@@ -222,6 +230,8 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         onChange={setReferenceImages}
         enabled={referencesEnabled}
       />
+
+      <OutfitPicker value={outfit} onChange={setOutfit} />
 
       <div>
         <label className="block text-[10px] font-mono text-text-muted mb-1">

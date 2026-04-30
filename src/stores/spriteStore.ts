@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SpriteSheet, SpriteAnimation, SpriteFrame } from '@/lib/types';
 import type { SlicerHints } from '@/lib/generationHistory';
+import type { Outfit } from '@/lib/parts/catalog';
 
 interface SpriteStore {
   spriteSheet: SpriteSheet | null;
@@ -22,7 +23,7 @@ interface SpriteStore {
   originalCharacterDataUrl: string | null;
   generationCount: number;
   generationCountDate: string;
-  tokenBalance: number;
+  outfit: Outfit;
 
   setSpriteSheet: (sheet: SpriteSheet) => void;
   clearSpriteSheet: () => void;
@@ -46,7 +47,7 @@ interface SpriteStore {
   setOriginalCharacter: (dataUrl: string | null) => void;
   setGenerationCount: (count: number, date: string) => void;
   setGeneratingAction: (action: string | null) => void;
-  setTokenBalance: (balance: number) => void;
+  setOutfit: (outfit: Outfit) => void;
   setCurrentSheetMetadata: (metadata: SlicerHints | null) => void;
 }
 
@@ -67,7 +68,7 @@ export const useSpriteStore = create<SpriteStore>((set) => ({
   originalCharacterDataUrl: null,
   generationCount: 0,
   generationCountDate: '',
-  tokenBalance: 0,
+  outfit: {},
 
   setSpriteSheet: (sheet) =>
     set({ spriteSheet: sheet, selectedFrames: [], animations: [] }),
@@ -169,7 +170,7 @@ export const useSpriteStore = create<SpriteStore>((set) => ({
 
   setGeneratingAction: (action) => set({ generatingAction: action }),
 
-  setTokenBalance: (balance) => set({ tokenBalance: balance }),
+  setOutfit: (outfit) => set({ outfit }),
 
   setCurrentSheetMetadata: (metadata) => set({ currentSheetMetadata: metadata }),
 }));

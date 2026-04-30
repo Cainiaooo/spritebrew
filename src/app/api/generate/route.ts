@@ -1,60 +1,53 @@
 // SSE-streaming API route for sprite generation.
 //
-// Local single-user deployment — auth/token/account-lock removed. The image
-// backend is currently still Retro Diffusion; Phase 2 swaps it for the
-// imageGenAdapter (GPT Image 2 / Gemini).
+// Local single-user deployment — no auth, no token economy.
+// Image generation goes through src/lib/imageGen (GPT Image / Gemini),
+// followed by postProcessSprite. Optional pixabots-parts overlay applied
+// after the AI step when an outfit is provided.
 
 export const runtime = 'nodejs';
 
-const LOCAL_USER_ID = 'local-user';
+import { getStyleByPromptStyle, getStyleById, getResolutionMode, GENERATION_STYLES } from '@/lib/styleRegistry';
+import { getImageGenAdapter } from '@/lib/imageGen';
+import { postProcessSprite } from '@/lib/imageGen/postProcess';
+import {
+  composeFramesHorizontally,
+  detectAndSliceFrames,
+} from '@/lib/imageGen/spritesheetSlicer';
+import {
+  applyOutfitBase64,
+  applyOutfitToSheet,
+} from '@/lib/parts/compositor';
+import { PARTS, type Outfit, type PartCategory } from '@/lib/parts/catalog';
 
 // ── Constants ──
 
-const RD_API_URL = 'https://api.retrodiffusion.ai/v1/inferences';
-
-// Animate My Character: action → rd_advanced_animation__* prompt_style
 const VALID_ACTIONS = ['walking', 'idle', 'attack', 'jump', 'crouch', 'destroy', 'subtle_motion', 'custom_action'];
-const VALID_FRAME_DURATIONS = [4, 6, 8, 10, 12, 16];
-
-const ACTION_STYLE_MAP: Record<string, string> = {
-  walking: 'rd_advanced_animation__walking',
-  idle: 'rd_advanced_animation__idle',
-  attack: 'rd_advanced_animation__attack',
-  jump: 'rd_advanced_animation__jump',
-  crouch: 'rd_advanced_animation__crouch',
-  destroy: 'rd_advanced_animation__destroy',
-  subtle_motion: 'rd_advanced_animation__subtle_motion',
-  custom_action: 'rd_advanced_animation__custom_action',
-};
+const VALID_FRAME_DURATIONS = [4, 6, 8];
 
 const ACTION_PROMPT_PREFIX: Record<string, string> = {
   walking: 'walking animation, smooth steps',
-  idle: 'idle breathing animation, subtle movement',
+  idle: 'idle breathing animation, subtle motion',
   attack: 'attack animation, melee swing',
   jump: 'jump animation, rising and falling',
   crouch: 'crouching animation, ducking down',
   destroy: 'death animation, falling and fading',
-  subtle_motion: 'subtle ambient motion, wind effect',
+  subtle_motion: 'subtle ambient motion',
   custom_action: '',
 };
 
-const FALLBACK_STYLE = 'animation__any_animation';
-
-const RD_REFERENCE_IMAGES_PARAM = 'reference_images';
-const RD_MAX_REFERENCE_IMAGES = 9;
-// 12MB ceiling on total reference payload, expressed in base64 string length.
+const MAX_REFERENCE_IMAGES = 4;
 const REF_TOTAL_BASE64_BUDGET = 12 * 1024 * 1024 * 4 / 3;
 
 interface GenerateBody {
   prompt?: string;
-  // Create New fields
   promptStyle?: string;
   style?: string;
   width?: number;
   height?: number;
   removeBg?: boolean;
   referenceImages?: string[];
-  // Animate My Character fields
+  outfit?: Outfit;
   mode?: 'create' | 'animate';
   inputImage?: string;
   action?: string;
@@ -65,24 +58,23 @@ interface GenerateBody {
 // ── SSE helpers ──
 
 const encoder = new TextEncoder();
-function sseEvent(data: Record<string, unknown>): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
-}
-function sseComment(text: string): Uint8Array {
-  return encoder.encode(`: ${text}\n\n`);
-}
-function sseDone(): Uint8Array {
-  return encoder.encode('data: [DONE]\n\n');
-}
+const sseEvent = (data: Record<string, unknown>): Uint8Array =>
+  encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+const sseComment = (text: string): Uint8Array =>
+  encoder.encode(`: ${text}\n\n`);
+const sseDone = (): Uint8Array => encoder.encode('data: [DONE]\n\n');
+
 function startHeartbeat(writer: WritableStreamDefaultWriter<Uint8Array>, ms = 15_000) {
   return setInterval(async () => {
-    try { await writer.write(sseComment('heartbeat')); } catch { /* closed */ }
+    try {
+      await writer.write(sseComment('heartbeat'));
+    } catch {
+      /* closed */
+    }
   }, ms);
 }
 
-// ── POST handler ──
-
-import { getResolutionMode, GENERATION_STYLES } from '@/lib/styleRegistry';
+// ── POST ──
 
 export async function POST(request: Request) {
   let body: GenerateBody;
@@ -93,16 +85,9 @@ export async function POST(request: Request) {
   }
 
   const mode = body.mode ?? 'create';
+  const err = mode === 'animate' ? validateAnimateBody(body) : validateCreateBody(body);
+  if (err) return Response.json({ success: false, error: err }, { status: 400 });
 
-  if (mode === 'create') {
-    const err = validateCreateBody(body);
-    if (err) return Response.json({ success: false, error: err }, { status: 400 });
-  } else {
-    const err = validateAnimateBody(body);
-    if (err) return Response.json({ success: false, error: err }, { status: 400 });
-  }
-
-  // Open SSE stream
   const { readable, writable } = new TransformStream<Uint8Array>();
   const writer = writable.getWriter();
 
@@ -112,8 +97,8 @@ export async function POST(request: Request) {
       await writer.write(sseEvent({ type: 'status', message: 'Starting generation...' }));
       const result = mode === 'animate' ? await runAnimate(body) : await runCreate(body);
       await writer.write(sseEvent({ type: 'result', data: result }));
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
       await writer.write(sseEvent({ type: 'error', message })).catch(() => {});
     } finally {
       clearInterval(heartbeat);
@@ -121,9 +106,6 @@ export async function POST(request: Request) {
       await writer.close().catch(() => {});
     }
   })();
-
-  // userId currently unused — referenced for future per-request logging hooks.
-  void LOCAL_USER_ID;
 
   return new Response(readable, {
     headers: {
@@ -149,21 +131,17 @@ function validateCreateBody(body: GenerateBody): string | null {
       }
     } else {
       if (body.width < mode.min || body.width > mode.max) {
-        return `Width must be between ${mode.min} and ${mode.max} for this style. Got ${body.width}.`;
+        return `Width must be between ${mode.min} and ${mode.max}. Got ${body.width}.`;
       }
       if (body.height < mode.min || body.height > mode.max) {
-        return `Height must be between ${mode.min} and ${mode.max} for this style. Got ${body.height}.`;
+        return `Height must be between ${mode.min} and ${mode.max}. Got ${body.height}.`;
       }
     }
   }
 
-  if (body.referenceImages && body.referenceImages.length > 0) {
-    const style = GENERATION_STYLES.find((s) => s.promptStyle === ps);
-    if (!style?.supportsReferenceImages) {
-      return `Style "${ps}" does not support reference images. Use a Pro style.`;
-    }
-    if (body.referenceImages.length > RD_MAX_REFERENCE_IMAGES) {
-      return `Maximum ${RD_MAX_REFERENCE_IMAGES} reference images. Received ${body.referenceImages.length}.`;
+  if (body.referenceImages?.length) {
+    if (body.referenceImages.length > MAX_REFERENCE_IMAGES) {
+      return `Maximum ${MAX_REFERENCE_IMAGES} reference images.`;
     }
     for (let i = 0; i < body.referenceImages.length; i++) {
       const img = body.referenceImages[i];
@@ -171,127 +149,138 @@ function validateCreateBody(body: GenerateBody): string | null {
         return `Reference image ${i + 1} is not a valid string.`;
       }
       if (img.startsWith('data:')) {
-        return `Reference image ${i + 1} includes a data: prefix. Strip it before sending.`;
+        return `Reference image ${i + 1} includes data: prefix. Strip it before sending.`;
       }
     }
-    const totalSize = body.referenceImages.reduce((sum, img) => sum + img.length, 0);
-    if (totalSize > REF_TOTAL_BASE64_BUDGET) {
-      return 'Total reference image payload too large. Reduce image count or size.';
+    const total = body.referenceImages.reduce((s, img) => s + img.length, 0);
+    if (total > REF_TOTAL_BASE64_BUDGET) {
+      return 'Total reference image payload too large.';
     }
+  }
+
+  if (body.outfit) {
+    const outfitErr = validateOutfit(body.outfit);
+    if (outfitErr) return outfitErr;
   }
 
   return null;
 }
 
 function validateAnimateBody(body: GenerateBody): string | null {
-  if (!body.inputImage) return 'An input image is required for animation. Please upload a character first.';
-  if (!body.action || !VALID_ACTIONS.includes(body.action))
+  if (!body.inputImage) return 'An input image is required for animation.';
+  if (!body.action || !VALID_ACTIONS.includes(body.action)) {
     return `Invalid action. Must be one of: ${VALID_ACTIONS.join(', ')}`;
+  }
   const w = body.width ?? 64;
   const h = body.height ?? 64;
   if (w !== h) return `Animation requires square dimensions. Got ${w}x${h}.`;
+  if (body.framesDuration && !VALID_FRAME_DURATIONS.includes(body.framesDuration)) {
+    return `Frame count must be one of: ${VALID_FRAME_DURATIONS.join(', ')}.`;
+  }
+  if (body.outfit) {
+    const outfitErr = validateOutfit(body.outfit);
+    if (outfitErr) return outfitErr;
+  }
+  return null;
+}
 
-  const promptStyle = ACTION_STYLE_MAP[body.action] ?? FALLBACK_STYLE;
-  const mode = getResolutionMode(promptStyle);
-  if (mode) {
-    if (mode.kind === 'locked') {
-      if (w !== mode.size) {
-        return `This style is locked at ${mode.size}x${mode.size}. Got ${w}x${h}.`;
-      }
-    } else {
-      if (w < mode.min || w > mode.max) {
-        return `Resolution must be between ${mode.min} and ${mode.max} for this style. Got ${w}.`;
-      }
-      if (mode.kind === 'variable_special' && !mode.presets.includes(w)) {
-        return `Resolution must be one of: ${mode.presets.join(', ')}. Got ${w}.`;
-      }
+function validateOutfit(outfit: Outfit): string | null {
+  for (const [cat, name] of Object.entries(outfit)) {
+    if (!name) continue;
+    const c = cat as PartCategory;
+    if (!(c in PARTS)) return `Unknown outfit category: ${cat}`;
+    if (!PARTS[c].some((p) => p.name === name)) {
+      return `Unknown ${cat} part: ${name}`;
     }
   }
   return null;
 }
 
 // ── Runners ──
-//
-// NOTE: Phase 1 retains the Retro Diffusion direct call. Phase 2 replaces
-// callRD() with imageGenAdapter (GPT Image 2 / Gemini) + Phase 3 post-process.
 
-async function callRD(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const rdToken = process.env.RETRO_DIFFUSION_API_KEY;
-  if (!rdToken) throw new Error('Retro Diffusion API key not configured.');
+async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
+  const w = body.width ?? 64;
+  const h = body.height ?? 64;
+  const styleKey = body.promptStyle ?? body.style;
+  const style =
+    (styleKey ? getStyleByPromptStyle(styleKey) ?? getStyleById(styleKey) : undefined) ??
+    GENERATION_STYLES[0];
 
-  const res = await fetch(RD_API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-RD-Token': rdToken },
-    body: JSON.stringify(payload),
+  const prompt = buildCreatePrompt(body.prompt!.trim(), style.promptPrefix, w, h, body.removeBg ?? true);
+
+  const adapter = getImageGenAdapter();
+  const raw = await adapter.generate({
+    prompt,
+    width: w,
+    height: h,
+    referenceImages: body.referenceImages,
   });
 
-  if (!res.ok) {
-    const errBody = await res.text().catch(() => 'Unknown');
-    throw new Error(`Retro Diffusion error (${res.status}): ${errBody.slice(0, 300)}`);
-  }
+  let processed = await postProcessSprite(raw.rawBase64Image, {
+    targetWidth: w,
+    targetHeight: h,
+    paletteColors: style.paletteColors,
+    removeBackground: body.removeBg ?? true,
+  });
 
-  const data = await res.json();
-  if (!data.base64_images?.length) {
-    throw new Error('Generation completed but no image was returned.');
+  if (body.outfit && Object.keys(body.outfit).length > 0) {
+    processed = await applyOutfitBase64(processed, body.outfit);
   }
 
   return {
     success: true,
-    imageUrl: `data:image/png;base64,${data.base64_images[0]}`,
-    prediction: { status: 'succeeded' },
+    imageUrl: `data:image/png;base64,${processed}`,
+    prediction: { status: 'succeeded', cost: raw.cost },
   };
-}
-
-async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
-  const promptStyle = body.promptStyle ?? body.style;
-  const isAnimation = promptStyle?.startsWith('animation__');
-
-  const payload: Record<string, unknown> = {
-    prompt: body.prompt!.trim(),
-    prompt_style: promptStyle,
-    width: body.width,
-    height: body.height,
-    num_images: 1,
-  };
-
-  if (body.removeBg) payload.remove_bg = true;
-  if (isAnimation) payload.return_spritesheet = true;
-
-  if (body.referenceImages && body.referenceImages.length > 0) {
-    payload[RD_REFERENCE_IMAGES_PARAM] = body.referenceImages;
-  }
-
-  return callRD(payload);
 }
 
 async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> {
-  const { inputImage, action, framesDuration, motionPrompt } = body;
-  const duration = framesDuration && VALID_FRAME_DURATIONS.includes(framesDuration) ? framesDuration : 4;
-  const rawBase64 = inputImage!.replace(/^data:image\/[a-z]+;base64,/, '');
-  const animSize = body.width ?? 64;
+  const frameCount = body.framesDuration && VALID_FRAME_DURATIONS.includes(body.framesDuration)
+    ? body.framesDuration
+    : 6;
+  const frameSize = body.width ?? 64;
+  const action = body.action!;
+  const motion = body.motionPrompt?.trim() ?? '';
 
-  const prefix = ACTION_PROMPT_PREFIX[action!] ?? '';
-  const userMotion = motionPrompt?.trim() ?? '';
-  const prompt = action === 'custom_action'
-    ? (userMotion || 'smooth animation')
-    : [prefix, userMotion].filter(Boolean).join(', ');
+  const actionPrefix = ACTION_PROMPT_PREFIX[action] ?? '';
+  const customMotion = action === 'custom_action' ? (motion || 'smooth animation') : '';
+  const promptParts = [
+    `${frameCount}-frame ${actionPrefix} sprite sheet of this character`,
+    'horizontal layout, evenly spaced frames',
+    `each frame ${frameSize}x${frameSize} pixels`,
+    'pixel art style, transparent background',
+    'character must remain visually identical across all frames',
+    customMotion || motion,
+  ].filter(Boolean);
+  const prompt = promptParts.join(', ');
 
-  const promptStyle = ACTION_STYLE_MAP[action!] ?? FALLBACK_STYLE;
+  const referenceB64 = body.inputImage!.replace(/^data:image\/[a-z]+;base64,/, '');
+  const adapter = getImageGenAdapter();
 
-  const payload: Record<string, unknown> = {
-    prompt, width: animSize, height: animSize, num_images: 1,
-    prompt_style: promptStyle, frames_duration: duration,
-    return_spritesheet: true, input_image: rawBase64,
-  };
+  const raw = await adapter.editWithReference({
+    referenceImage: referenceB64,
+    prompt,
+    canvasSize: { w: frameCount * 256, h: 256 },
+  });
 
-  try {
-    return await callRD(payload);
-  } catch {
-    if (promptStyle !== FALLBACK_STYLE) {
-      payload.prompt_style = FALLBACK_STYLE;
-      delete payload.frames_duration;
-      return callRD(payload);
-    }
-    throw new Error('Animation generation failed.');
+  const frames = await detectAndSliceFrames(raw.rawBase64Image, frameCount, frameSize);
+  let composed = await composeFramesHorizontally(frames, frameSize);
+
+  if (body.outfit && Object.keys(body.outfit).length > 0) {
+    composed = await applyOutfitToSheet(composed, body.outfit, frameCount, frameSize);
   }
+
+  return {
+    success: true,
+    imageUrl: `data:image/png;base64,${composed}`,
+    prediction: { status: 'succeeded', cost: raw.cost, frameCount },
+  };
+}
+
+// ── Helpers ──
+
+function buildCreatePrompt(userPrompt: string, prefix: string, w: number, h: number, transparent: boolean): string {
+  const parts = [prefix, userPrompt, `${w}x${h} pixels`];
+  if (transparent) parts.push('transparent background');
+  return parts.join(', ');
 }
