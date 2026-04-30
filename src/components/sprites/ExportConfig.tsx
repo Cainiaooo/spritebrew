@@ -16,6 +16,7 @@ import {
   exportRPGMaker,
   exportGodot,
   exportRawFrames,
+  exportLayered,
   type ExportOptions,
   type RPGMakerOptions,
 } from '@/lib/exportEngine';
@@ -36,6 +37,7 @@ export default function ExportConfig() {
   const animations = useSpriteStore((s) => s.animations);
   const spriteSheet = useSpriteStore((s) => s.spriteSheet);
   const frameDataUrls = useSpriteStore((s) => s.frameDataUrls);
+  const outfit = useSpriteStore((s) => s.outfit);
 
   const [selectedEngine, setSelectedEngine] = useState<EngineId>('texturepacker');
   const [selectedAnims, setSelectedAnims] = useState<Set<string>>(new Set());
@@ -222,6 +224,9 @@ export default function ExportConfig() {
         case 'raw-frames':
           await exportRawFrames({ ...baseOpts, includeManifest });
           break;
+        case 'layered':
+          await exportLayered({ ...baseOpts, outfit });
+          break;
       }
 
       setShowSuccess(true);
@@ -232,7 +237,7 @@ export default function ExportConfig() {
   }, [
     activeAnimations, frameDataUrls, fw, fh, padding, powerOfTwo,
     resizeEnabled, resizeW, resizeH, includeMetadata, selectedEngine,
-    spriteSheet, rpgFrameW, rpgFrameH, directionMap, includeManifest,
+    spriteSheet, rpgFrameW, rpgFrameH, directionMap, includeManifest, outfit,
   ]);
 
   const engineInfo = ENGINE_TARGETS.find((e) => e.id === selectedEngine)!;

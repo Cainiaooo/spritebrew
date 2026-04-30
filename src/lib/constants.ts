@@ -57,6 +57,7 @@ export const ENGINE_TARGETS = [
   { id: 'aseprite', label: 'Aseprite JSON', engines: ['Aseprite', 'Phaser 3'] },
   { id: 'godot-tres', label: 'Godot SpriteFrames', engines: ['Godot 4'] },
   { id: 'raw-frames', label: 'Individual Frames (PNG)', engines: ['Any'] },
+  { id: 'layered', label: 'Layered (Runtime)', engines: ['PixiJS', 'Phaser', 'Custom'] },
 ] as const;
 
 // Demo area keyboard controls

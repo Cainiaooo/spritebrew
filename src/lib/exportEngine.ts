@@ -9,6 +9,7 @@ import {
   sanitizeFilename,
 } from '@/lib/downloadUtils';
 import { loadImage } from '@/lib/spriteUtils';
+import { PARTS, type Outfit, type PartCategory } from '@/lib/parts/catalog';
 
 export interface ExportOptions {
   animations: SpriteAnimation[];
@@ -407,6 +408,136 @@ animations = [${animEntries.join(', ')}]
   } else {
     downloadFile(pngBlob, pngFilename);
   }
+}
+
+// ─── Layered (runtime-composable) ───
+//
+// Bundles the current composed sheet alongside the parts that were chosen at
+// generation time, plus a layout.json + README. The "base.png" is the composed
+// sheet — true uncomposed layering would require keeping the pre-outfit base
+// across the slice/edit pipeline; v1 ships the kit form.
+
+export interface LayeredExportOptions extends ExportOptions {
+  outfit: Outfit;
+}
+
+export async function exportLayered(opts: LayeredExportOptions): Promise<void> {
+  const { animations, frameDataUrls, outfit, sheetName } = opts;
+  const fw = opts.resizeWidth ?? opts.frameWidth;
+  const fh = opts.resizeHeight ?? opts.frameHeight;
+
+  if (animations.length === 0) return;
+
+  // Build the composed base sheet (one strip per animation).
+  const allCanvases: HTMLCanvasElement[] = [];
+  const animMeta: { name: string; startIdx: number; count: number; fps: number; loop: boolean }[] = [];
+  for (const anim of animations) {
+    if (anim.frames.length === 0) continue;
+    const canvases = await loadFrameCanvases(anim.frames, frameDataUrls, fw, fh);
+    animMeta.push({
+      name: anim.name,
+      startIdx: allCanvases.length,
+      count: canvases.length,
+      fps: anim.fps,
+      loop: anim.loop,
+    });
+    allCanvases.push(...canvases);
+  }
+  if (allCanvases.length === 0) return;
+
+  const columns = optimalColumns(allCanvases.length);
+  const sheet = assembleGridSheet(allCanvases, columns, opts.padding, opts.powerOfTwo);
+  const baseBlob = await canvasToBlob(sheet);
+
+  const files: { name: string; data: Blob | string }[] = [
+    { name: 'base.png', data: baseBlob },
+  ];
+
+  // Fetch each selected part PNG and resize to frame size for runtime overlay.
+  const partsManifest: Record<string, { source: string; width: number; height: number; frames: number; kind: string }> = {};
+  for (const cat of Object.keys(outfit) as PartCategory[]) {
+    const partName = outfit[cat];
+    if (!partName) continue;
+    const part = PARTS[cat].find((p) => p.name === partName);
+    if (!part) continue;
+
+    const partUrl = `/parts/${cat}/${partName}${part.frames && part.frames > 1 ? `/${partName}-${pickFirstFrameSuffix(part)}` : ''}.png`;
+    const partImg = await loadImage(partUrl).catch(() => null);
+    if (!partImg) continue;
+
+    const partCanvas = document.createElement('canvas');
+    partCanvas.width = fw;
+    partCanvas.height = fh;
+    const pctx = partCanvas.getContext('2d')!;
+    pctx.imageSmoothingEnabled = false;
+    pctx.drawImage(partImg, 0, 0, fw, fh);
+    const partBlob = await canvasToBlob(partCanvas);
+
+    files.push({ name: `parts/${cat}.png`, data: partBlob });
+    partsManifest[cat] = {
+      source: `parts/${cat}.png`,
+      width: fw,
+      height: fh,
+      frames: part.frames ?? 1,
+      kind: part.kind ?? 'static',
+    };
+  }
+
+  const layout = {
+    generator: 'SpriteBrew',
+    version: '1.0',
+    base: 'base.png',
+    columns,
+    padding: opts.padding,
+    frameWidth: fw,
+    frameHeight: fh,
+    layerOrder: ['base', 'top', 'body', 'heads', 'eyes'],
+    parts: partsManifest,
+    animations: animMeta.map((am) => ({
+      name: am.name,
+      startIndex: am.startIdx,
+      frameCount: am.count,
+      fps: am.fps,
+      loop: am.loop,
+    })),
+  };
+  files.push({ name: 'layout.json', data: JSON.stringify(layout, null, 2) });
+
+  const readme = [
+    '# SpriteBrew Layered Export',
+    '',
+    'This bundle contains the composed sprite sheet (`base.png`), the parts',
+    'selected at generation time (under `parts/`), and `layout.json` describing',
+    'frame indices and intended layer order.',
+    '',
+    '## Files',
+    '',
+    '- `base.png` — composed sprite sheet at the chosen frame size.',
+    '- `parts/{category}.png` — first frame of the selected part, resized to the',
+    '  same frame size as the sheet. Use these for runtime decoration (e.g.',
+    '  swap eyes per state).',
+    '- `layout.json` — frame layout, animation tags, and selected parts.',
+    '',
+    '## Recompositing at runtime',
+    '',
+    'Render `base.png`, then composite the part overlays in the order listed in',
+    '`layout.json` -> `layerOrder`. Each part PNG is sized to fit one frame of',
+    'the base sheet — translate it to `(frameIndex * frameWidth, 0)` to match.',
+    '',
+    'Note: in v1 the base is already composed with the chosen outfit. To keep',
+    'the parts swappable at runtime, regenerate with no outfit selected, then',
+    'use this Layered export with the outfit you actually want bundled.',
+    '',
+  ].join('\n');
+  files.push({ name: 'README.md', data: readme });
+
+  await downloadAsZip(files, `${sanitizeFilename(sheetName)}_layered.zip`);
+}
+
+function pickFirstFrameSuffix(part: { frames?: number; kind?: string }): string {
+  if (part.kind === 'blink') return 'open';
+  if (part.kind === 'sequence') return '01';
+  return '01';
 }
 
 // ─── Raw Individual Frames ───
