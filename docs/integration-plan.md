@@ -1,71 +1,72 @@
-# SpriteBrew 整合改造实施计划
+# SpriteBrew 整合改造实施计划（合并版）
 
 > **项目：** SpriteBrew（fork 自 GAlbanese09/spritebrew）
-> **日期：** 2026-04-30
-> **目标：** 在 `adaptation-plan.md` 基础上，进一步整合 pixabots 的 compositor + parts 体系，支持 GPT Image 2 / Gemini 双后端切换，并适配 AgentHydration（PixiJS）和 game-simulate（Godot 4）两个消费方
-> **关联文档：** `docs/adaptation-plan.md`（基础去云依赖改造）
+> **创建：** 2026-04-30 · **最后同步：** 2026-04-30 (Phase 1 完成)
+> **目标：** 本地单用户部署 + GPT Image 2 / Gemini 双后端 + 整合 pixabots compositor + 适配 AgentHydration 和 game-simulate 两个消费方
 > **协议：** AGPL-3.0
+> **本文档是唯一计划源**（`adaptation-plan.md` 已合并到本文）
 
 ---
 
-## 0. 与 adaptation-plan.md 的关系
+## 进度速览
 
-`adaptation-plan.md` 覆盖了"去 Clerk/KV/Stripe + Edge→Node runtime 切换 + 替换 RD 后端"的**基础改造**。本计划在此基础上扩展三块**它没覆盖的内容**：
+| Phase | 内容 | 状态 |
+|---|---|---|
+| Phase 1 | 去云依赖（Clerk/KV/Stripe + runtime） | ✅ 完成（commit `1196647`） |
+| Phase 2 | imageGenAdapter 双后端 | ⏳ 待开始 |
+| Phase 3 | 后处理流水线 | ⏳ 待开始 |
+| Phase 4 | pixabots compositor + parts 移植 | ⏳ 待开始 |
+| Phase 5 | Create New 整合（含 outfit picker） | ⏳ 待开始 |
+| Phase 6 | Animate My Character 改造 | ⏳ 待开始 |
+| Phase 7 | 双模式导出（baked + layered） | ⏳ 待开始 |
+| Phase 8 | AgentHydration 接入 | ⏳ 待开始 |
 
-| 维度 | adaptation-plan.md | 本计划新增 |
-|------|---|---|
-| AI 后端 | 单后端（RD 替换为某一个 API） | **双后端适配层**（GPT Image 2 / Gemini，env 切换） |
-| 后处理 | 未涉及 | **降采样 + 背景移除 + 调色板量化**（GPT/Gemini 输出 1024+，必须后处理） |
-| 部件系统 | 未涉及 | **从 pixabots 移植 compositor + parts**（运行时换装） |
-| 导出形态 | 沿用现有 6 种 | **新增分层导出**（base + parts + manifest，支持运行时分层渲染） |
-| 消费方 | 未涉及 | **AgentHydration 接入**（替换 ASCII/Lottie，PixiJS v8 直接消费 Aseprite JSON 或分层包） |
-
-执行顺序建议：**先做 adaptation-plan.md Phase 1-4（去云依赖），再做本计划 Phase 2-8**。
+**当前可工作功能：** Create New + Animate My Character 已能本地运行（仍调用 RD API，需配 `RETRO_DIFFUSION_API_KEY`），后续 Phase 2 起替换为 GPT/Gemini。
 
 ---
 
-## 1. 总览与范围
+## 0. 总览与范围
 
-### 1.1 v1 目标功能清单
+### 0.1 v1 目标功能清单
 
 - ✅ **Create New**（文本生成像素角色）
 - ✅ **Animate My Character**（上传角色 + 动作 → 动画 sprite sheet）
-- ✅ **Outfit / Parts**（从 pixabots 移植，可选叠加部件）
-- ✅ **GPT Image 2 / Gemini 双后端**（env 切换）
-- ✅ **双导出**（baked PNG + 分层 zip）
-- ✅ **AgentHydration 适配**（character 模板预设，一键产出 7 状态 sprite sheet）
+- 🔜 **Outfit / Parts**（从 pixabots 移植，可选叠加部件）
+- 🔜 **GPT Image 2 / Gemini 双后端**（env 切换）
+- 🔜 **双导出**（baked PNG + 分层 zip）
+- 🔜 **AgentHydration 适配**（character 模板预设，一键产出 7 状态 sprite sheet）
 - ✅ **game-simulate 适配**（Godot SpriteFrames `.tres`，沿用现有导出器）
 - ✅ **本地单用户部署**（无 Clerk/KV/Stripe）
 
-### 1.2 v1 不做（phase 2 再考虑）
+### 0.2 v1 不做（phase 2 再考虑）
 
 - ❌ Token 余额持久化（v1 在本地无需限额）
 - ❌ 多用户隔离（v1 单用户）
 - ❌ 在线部署（v1 仅本地，AGPL 触发条件不达成）
 - ❌ Animate 模式的 12/16 帧档位（先跑通 4/6/8）
 
-### 1.3 工作量估算
+### 0.3 工作量估算
 
-| Phase | 内容 | 估时 |
-|---|---|---|
-| Phase 1 | 沿用 adaptation-plan.md（去 Clerk/KV/Stripe + runtime） | 0.5 天 |
-| Phase 2 | imageGenAdapter 双后端 | 1 天 |
-| Phase 3 | 后处理流水线 | 0.5 天 |
-| Phase 4 | pixabots compositor + parts 移植 | 1 天 |
-| Phase 5 | Create New 整合（含 outfit picker UI） | 0.5 天 |
-| Phase 6 | Animate My Character 改造 | 0.5 天 |
-| Phase 7 | 双模式导出 | 0.5 天 |
-| Phase 8 | AgentHydration 接入 | 0.5 天 |
-| **合计** | | **5 天** |
+| Phase | 内容 | 估时 | 状态 |
+|---|---|---|---|
+| Phase 1 | 去云依赖 | 0.5 天 | ✅ |
+| Phase 2 | imageGenAdapter 双后端 | 1 天 | ⏳ |
+| Phase 3 | 后处理流水线 | 0.5 天 | ⏳ |
+| Phase 4 | pixabots compositor + parts 移植 | 1 天 | ⏳ |
+| Phase 5 | Create New 整合（含 outfit picker UI） | 0.5 天 | ⏳ |
+| Phase 6 | Animate My Character 改造 | 0.5 天 | ⏳ |
+| Phase 7 | 双模式导出 | 0.5 天 | ⏳ |
+| Phase 8 | AgentHydration 接入 | 0.5 天 | ⏳ |
+| **合计** | | **5 天** | **0.5 / 5** |
 
 ---
 
-## 2. 环境变量
+## 1. 环境变量
 
 `.env.local`（不提交，已在 `.gitignore`）：
 
 ```env
-# ====== AI 图片生成后端（二选一，env 切换）======
+# ====== AI 图片生成后端（Phase 2 起生效，二选一）======
 IMAGE_GEN_API_PROVIDER=gpt-image    # 可选：gpt-image | gemini
 
 # GPT Image 2（OpenAI gpt-image-1）
@@ -74,45 +75,57 @@ OPENAI_API_KEY=your_openai_key_here
 # Gemini Nano Banana（gemini-2.5-flash-image）
 GEMINI_API_KEY=your_gemini_key_here
 
-# ====== 不再需要 ======
-# RETRO_DIFFUSION_API_KEY=
-# NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-# CLERK_SECRET_KEY=
-# STRIPE_SECRET_KEY=
-# STRIPE_WEBHOOK_SECRET=
+# ====== Phase 1 临时保留 ======
+# 当前 /api/generate 仍调用 RD，Phase 2 替换为 imageGenAdapter 后可删除
+RETRO_DIFFUSION_API_KEY=your_rd_key_here
 ```
 
 **安全规则**：禁止把真实 key 写进任何 `.md` / `.ts` / git 跟踪的文件，只放在 `.env.local`。
 
 ---
 
-## 3. Phase 1：基础去云依赖改造
+## 2. Phase 1：去云依赖 ✅ 已完成
 
-> **沿用 `adaptation-plan.md` 的 Step 1-4 + Step 7-8。**
-> 这里只补充**与本计划交叉的注意点**。
+> **commit `1196647`** · **2026-04-30**
 
-### 3.1 必做项
+### 2.1 实际改动概要
 
-- 去 Clerk 认证（替换为固定 userId `'local-user'`）
-- KV 不配置即自动降级（无需改代码）
-- 删除 Stripe 相关目录
-- 所有 `/api/**/route.ts` 把 `runtime = 'edge'` 改为 `runtime = 'nodejs'`
+**删除文件（19 个）：**
+- `src/app/sign-in/`、`src/app/sign-up/`、`src/app/buy-tokens/`、`src/app/admin/test-references/`、`src/app/refund-policy/`
+- `src/app/api/stripe/`、`src/app/api/token-balance/`、`src/app/api/generation-limit/`、`src/app/api/waitlist/`
+- `src/lib/stripe.ts`、`accountLock.ts`、`tokenBalance.ts`、`tokenDebit.ts`、`serverRateLimit.ts`、`disputeEvidence.ts`、`tokenPacks.ts`
+- `src/components/layout/ClerkClientProvider.tsx`、`WaitlistModal.tsx`
 
-### 3.2 与本计划交叉的注意点
+**修改文件：**
+- `src/app/api/generate/route.ts` — 删除 JWT/account-lock/debit-credit 逻辑；`runtime: 'edge' → 'nodejs'`；保留 RD 调用作为临时桥
+- `src/app/layout.tsx` — 移除 `ClerkClientProvider` 包装
+- `src/app/page.tsx` — 替换为 minimal 本地 landing
+- `src/app/{generate,gallery}/page.tsx` — 移除 `useAuth()`，引入模块级 `userId = null` 常量
+- `src/components/sprites/{GenerationForm,AnimateForm,GenerationResult}.tsx` — 同上
+- `src/components/layout/{Sidebar,Header}.tsx` — 移除 sign-in / buy-tokens 导航
+- `src/app/{privacy,terms}/page.tsx` — runtime 切到 nodejs
+- `package.json` — 删除 `@clerk/react`、`stripe` deps
 
-- `imageGenAdapter` 用 `sharp` 做后处理，**必须 nodejs runtime**（edge 不支持 native binding）
-- `referenceImages` 字段在 adapter 层会被复用（不再是 RD pro 专属），需保留 base64 编码逻辑
-- Sidebar 导航除了去掉登录/注册/Buy Tokens，**新增 "Outfit" 入口**（指向 outfit picker，可作为独立页面或集成在 GenerationForm 里）
+**验证：**
+- `npx tsc --noEmit` 无错误
+- `NODE_OPTIONS= npm run build` 成功
+- 8 个 lint errors / 30 warnings 均为**改动前已存在的** set-state-in-effect / `<img>` 提示，未在 Phase 1 处理
+
+### 2.2 重要保留项
+
+- `tokenBalance` 字段仍在 `spriteStore.ts`（无 callers，留作 cleanup 候选）
+- `getTokenCost`、`isAdminUser` 仍在 `styleRegistry.ts` / `generationLimits.ts`（无 callers，Phase 5 重设 styleRegistry 时一起清理）
+- `ClerkClientProvider` 已删，但 `@clerk/react` 包对应代码已无引用
 
 ---
 
-## 4. Phase 2：imageGenAdapter 双后端适配层
+## 3. Phase 2：imageGenAdapter 双后端适配层
 
-### 4.1 目标
+### 3.1 目标
 
 抽象统一接口，让 `/api/generate/route.ts` 不感知具体后端。env 切 provider 即可换 API。
 
-### 4.2 新增文件：`src/lib/imageGen/types.ts`
+### 3.2 新增文件：`src/lib/imageGen/types.ts`
 
 ```typescript
 export interface GenerateRequest {
@@ -129,12 +142,9 @@ export interface EditRequest {
 }
 
 export interface GenResult {
-  /** API 原始返回的大图，base64（无 data: 前缀） */
-  rawBase64Image: string;
-  /** API 调用画布尺寸 */
+  rawBase64Image: string;      // API 返回大图，base64（无 data: 前缀）
   rawWidth: number;
   rawHeight: number;
-  /** 计费信息（如果 API 返回） */
   cost?: number;
 }
 
@@ -144,7 +154,7 @@ export interface ImageGenAdapter {
 }
 ```
 
-### 4.3 新增文件：`src/lib/imageGen/gptImageAdapter.ts`
+### 3.3 新增文件：`src/lib/imageGen/gptImageAdapter.ts`
 
 封装 OpenAI Images API：
 
@@ -154,7 +164,7 @@ export interface ImageGenAdapter {
 - 参考图：`generate` 不直接支持 ref，要走 `edit` 端点上传
 - 错误重试：429/5xx 指数退避（max 3 次）
 
-### 4.4 新增文件：`src/lib/imageGen/geminiAdapter.ts`
+### 3.4 新增文件：`src/lib/imageGen/geminiAdapter.ts`
 
 封装 Gemini Image API：
 
@@ -163,7 +173,7 @@ export interface ImageGenAdapter {
 - 输出：从 `candidates[0].content.parts[].inlineData.data` 提取 base64
 - 透明背景：通过 prompt 文本要求 `"on transparent background, no background color, alpha channel"`
 
-### 4.5 新增文件：`src/lib/imageGen/index.ts`
+### 3.5 新增文件：`src/lib/imageGen/index.ts`
 
 ```typescript
 import { GptImageAdapter } from './gptImageAdapter';
@@ -184,28 +194,28 @@ export function getImageGenAdapter(): ImageGenAdapter {
 }
 ```
 
-### 4.6 验证标准
+### 3.6 验证标准
 
 - 切换 env 不重启代码生效（开发时 Next.js 自动重载）
 - 两后端各跑 1 次 generate + 1 次 editWithReference，输出可解析为 PNG
 
 ---
 
-## 5. Phase 3：后处理流水线
+## 4. Phase 3：后处理流水线
 
-### 5.1 目标
+### 4.1 目标
 
 把 GPT/Gemini 返回的 1024px 高清图转换为目标尺寸的干净像素画。
 
-### 5.2 新增文件：`src/lib/imageGen/postProcess.ts`
+### 4.2 新增文件：`src/lib/imageGen/postProcess.ts`
 
 ```typescript
 export interface PostProcessOptions {
-  targetWidth: number;     // 目标输出像素，如 64
+  targetWidth: number;
   targetHeight: number;
-  paletteColors?: number;  // 可选，调色板量化色数（默认不量化）
-  removeBackground?: boolean;  // 默认 true
-  bgSampleStrategy?: 'corners' | 'edges' | 'fixed';  // 背景采样策略
+  paletteColors?: number;          // 可选，调色板量化色数
+  removeBackground?: boolean;      // 默认 true
+  bgSampleStrategy?: 'corners' | 'edges' | 'fixed';
 }
 
 export async function postProcessSprite(
@@ -214,9 +224,13 @@ export async function postProcessSprite(
 ): Promise<string>;  // 返回 base64（无 data: 前缀）
 ```
 
-### 5.3 实现要点
+### 4.3 实现要点
 
-依赖：`sharp`（已在 Cloudflare Pages 项目可能没装，需 `npm i sharp`）+ `image-q`（调色板量化）。
+依赖：`sharp` + `image-q`（调色板量化）
+
+```bash
+npm i sharp image-q
+```
 
 流水线：
 
@@ -224,20 +238,18 @@ export async function postProcessSprite(
 2. **背景去除**（移植自 pixabots `process_spritesheet.py`）：
    - 采样四角颜色，取主色作为背景
    - 阈值容差（默认 RGB 距离 30）内的像素 alpha 设为 0
-   - MinFilter/MaxFilter 形态学清理（消除边缘噪点）
+   - MinFilter/MaxFilter 形态学清理
 3. **裁剪**：`sharp().trim()` 自动裁到内容边界
-4. **居中填充**：放回 1024 画布中心，避免裁剪后比例失真
+4. **居中填充**：放回 1024 画布中心
 5. **降采样**：`sharp().resize(targetWidth, targetHeight, { kernel: 'nearest' })`
 6. **调色板量化**（可选）：`image-q` 的 `applyPaletteSync` + k-means 聚类到 N 色
 7. **输出**：`png().toBuffer().toString('base64')`
 
-### 5.4 Animate 模式的特殊后处理
+### 4.4 Animate 模式的特殊后处理
 
-Animate 输出的是**单张大图含 N 帧**，后处理流水线插一步**自动切帧**：
+新增 `src/lib/imageGen/spritesheetSlicer.ts`：
 
 ```typescript
-// src/lib/imageGen/spritesheetSlicer.ts
-
 export async function detectAndSliceFrames(
   rawBase64: string,
   expectedFrameCount: number,
@@ -249,9 +261,9 @@ export async function detectAndSliceFrames(
 
 - 假设横向均分布局：宽度 / N = 每帧宽度
 - 每帧独立 trim → 居中 → 降采样
-- 输出 N 个独立帧 base64（前端可自由组装为新的整齐 sprite sheet）
+- 输出 N 个独立帧 base64
 
-### 5.5 验证标准
+### 4.5 验证标准
 
 - 输入 1024×1024 GPT 原图 → 输出 64×64 PNG，前景清晰、透明背景、无白边
 - Animate 输入 1536×1024 含 6 帧 → 输出 6 张独立 64×64 PNG
@@ -259,13 +271,13 @@ export async function detectAndSliceFrames(
 
 ---
 
-## 6. Phase 4：pixabots compositor + parts 移植
+## 5. Phase 4：pixabots compositor + parts 移植
 
-### 6.1 目标
+### 5.1 目标
 
-把 pixabots `packages/extended/src/compositor.ts` 的部件叠加能力移植到 SpriteBrew，让用户在生成角色后可以叠加 eyes / heads / body / top 部件。
+把 `../pixabots/packages/extended/src/compositor.ts` 的部件叠加能力移植到 SpriteBrew。
 
-### 6.2 新增目录：`public/parts/`
+### 5.2 新增目录：`public/parts/`
 
 从 pixabots 拷贝 PNG 资源：
 
@@ -277,20 +289,19 @@ public/parts/
 └── top/     (12 张)
 ```
 
-**注意**：保持 pixabots 的目录结构，包括 `<part>/<part>-NN.png` 多帧约定。
+保持 pixabots 的目录结构，包括 `<part>/<part>-NN.png` 多帧约定。
 
-### 6.3 新增文件：`src/lib/parts/catalog.ts`
+### 5.3 新增文件：`src/lib/parts/catalog.ts`
 
-直接从 pixabots `packages/core/src/parts.ts` 拷贝过来，**不修改顺序**（base36 ID 稳定性依赖此约定）。导出：
+直接从 pixabots `packages/core/src/parts.ts` 拷贝，**不修改顺序**（base36 ID 稳定性依赖此约定）。导出：
 
 - `EYES`, `HEADS`, `BODY`, `TOP` 四个数组
 - `Part` 类型定义（含 `frames`, `kind`, `path`）
-- `decode(id: string): { eyes, heads, body, top }`
-- `encode(parts): string`
+- `decode(id: string)` / `encode(parts)`
 
-### 6.4 新增文件：`src/lib/parts/compositor.ts`
+### 5.4 新增文件：`src/lib/parts/compositor.ts`
 
-直接从 pixabots `packages/extended/src/compositor.ts` 移植，**保留所有公共 API**：
+直接从 pixabots `packages/extended/src/compositor.ts` 移植，保留所有公共 API：
 
 - `compositeFrame(layers: LayerDef[]): Promise<Buffer>`
 - `compositeAgentFrame(baseFrame: Buffer, overlays: PartOverlay[]): Promise<Buffer>`
@@ -299,24 +310,24 @@ public/parts/
 修改点：
 
 1. 把 pixabots 的 `loadAsset()` 路径从 `art/png/` 改为 SpriteBrew 的 `public/parts/`
-2. asset-loader 从 fs 读改为从 Next.js `public/` 目录读（开发时 fs 直读，生产时 fetch URL）
-3. 边缘 case：参考图为多帧 sprite sheet 时，逐帧叠加（接受 `frameIndex` 参数，复用 pixabots 已有逻辑）
+2. asset-loader 从 fs 读改为从 Next.js `public/` 目录读
+3. 多帧 sprite sheet 输入时，逐帧叠加（接受 `frameIndex` 参数，复用 pixabots 已有逻辑）
 
-### 6.5 不移植的部分
+### 5.5 不移植的部分
 
-- pixabots 的 base36 ID 字符串编码 UI（CLI `avatar` 命令）—— SpriteBrew UI 直接选下拉框即可，不需要短码
-- pixabots 的 Python `process_spritesheet.py` —— **TS 重写已在 Phase 3 完成**
+- pixabots 的 base36 ID 字符串 CLI（用不到）
+- pixabots 的 Python `process_spritesheet.py`（已在 Phase 3 用 TS 重写）
 
-### 6.6 验证标准
+### 5.6 验证标准
 
 - 调 `compositeAgentFrame()` 输入一张 base64 角色 + `[{cat: 'top', name: 'horns'}]` → 输出叠加 horns 的 PNG
-- 多帧 sprite sheet 输入时，每帧都叠加（不是只叠在第一帧）
+- 多帧 sprite sheet 输入时，每帧都叠加
 
 ---
 
-## 7. Phase 5：Create New 整合改造
+## 6. Phase 5：Create New 整合改造
 
-### 7.1 修改文件：`src/app/api/generate/route.ts`
+### 6.1 修改文件：`src/app/api/generate/route.ts`
 
 **重写 `runCreate()`**：
 
@@ -354,12 +365,9 @@ async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
 }
 ```
 
-**`buildCreatePrompt()` 实现**：
+`buildCreatePrompt()`：从 `styleRegistry.ts` 读 `promptPrefix`（新字段），拼接为 `"{prefix}, {user prompt}, pixel art, {width}x{height}, transparent background"`。
 
-- 从 `styleRegistry.ts` 读 `promptPrefix`（新字段，替代 RD 的 `promptStyle`）
-- 拼接为 `"{prefix}, {user prompt}, pixel art, {width}x{height}, transparent background"`
-
-### 7.2 修改文件：`src/lib/styleRegistry.ts`
+### 6.2 修改文件：`src/lib/styleRegistry.ts`
 
 **字段调整**：
 
@@ -381,16 +389,14 @@ interface GenerationStyle {
   paletteColors?: number;      // 可选量化色数
 
   // 移除
-  // promptStyle (废弃)
-  // costPerGeneration / tokenCost (本地无限额，删除)
-  // supportsRemoveBg → 全部默认 true
+  // promptStyle、costPerGeneration、tokenCost、supportsRemoveBg → 全部默认 true
   // supportsReferenceImages → 全部默认 true（GPT/Gemini 都支持）
 }
 ```
 
 风格条目精简：保留 6-8 个有代表性的（character / item / environment / tile / portrait / animation_walk / animation_idle / animation_attack），删除 RD 专属细分。
 
-### 7.3 新增组件：`src/components/sprites/OutfitPicker.tsx`
+### 6.3 新增组件：`src/components/sprites/OutfitPicker.tsx`
 
 UI 结构：
 
@@ -400,25 +406,25 @@ UI 结构：
 ```
 
 - 每个下拉显示部件缩略图 + 名称
-- 选中后实时预览（前端 canvas 合成预览，无需调后端）
+- 选中后实时预览（前端 canvas 合成，无需调后端）
 - 状态存到 `spriteStore`：`outfit: { eyes?: string; heads?: string; body?: string; top?: string }`
 
-### 7.4 修改组件：`src/components/sprites/GenerationForm.tsx`
+### 6.4 修改组件：`src/components/sprites/GenerationForm.tsx`
 
 - 在 Style 选择下方插入 `<OutfitPicker />`（可折叠 "Optional: Outfit"）
 - 提交时把 `outfit` 字段加入 POST body
 
-### 7.5 验证标准
+### 6.5 验证标准
 
 - Create New 输入 prompt + 选 outfit → 返回叠加好的 PNG
-- 不选 outfit → 行为与现版本一致
+- 不选 outfit → 行为与 Phase 1 版本一致
 - 切换 GPT / Gemini provider，两边都能跑通
 
 ---
 
-## 8. Phase 6：Animate My Character 改造
+## 7. Phase 6：Animate My Character 改造
 
-### 8.1 修改文件：`src/app/api/generate/route.ts`
+### 7.1 修改文件：`src/app/api/generate/route.ts`
 
 **重写 `runAnimate()`**：
 
@@ -441,7 +447,7 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
   ].filter(Boolean).join(', ');
 
   // 2. 调 AI（单次出大图）
-  const canvasW = frameCount * 256;  // 每帧画布留 256px 给 AI 发挥
+  const canvasW = frameCount * 256;
   const canvasH = 256;
   const raw = await adapter.editWithReference({
     referenceImage: inputImage!.replace(/^data:image\/[a-z]+;base64,/, ''),
@@ -463,29 +469,29 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
 }
 ```
 
-### 8.2 修改文件：`src/components/sprites/AnimateForm.tsx`
+### 7.2 修改文件：`src/components/sprites/AnimateForm.tsx`
 
 - 帧数选项收窄到 4/6/8（移除 10/12/16，提示 "Phase 2 will add more"）
 - UI 文案更新（移除 "powered by Retro Diffusion"）
 
-### 8.3 验证标准
+### 7.3 验证标准
 
-- 上传一张 64×64 角色 PNG → 选 walking + 6 帧 → 返回 384×64 sprite sheet（6 帧 × 64px）
-- 切帧准确率 100%（用合成测试图验证：6 帧每帧不同纯色，能正确分离）
-- 角色一致性可接受（人工验收，不要求像 RD 那么完美）
+- 上传一张 64×64 角色 PNG → 选 walking + 6 帧 → 返回 384×64 sprite sheet
+- 切帧准确率 100%（用合成测试图验证）
+- 角色一致性可接受（人工验收）
 
 ---
 
-## 9. Phase 7：双模式导出
+## 8. Phase 7：双模式导出
 
-### 9.1 修改文件：`src/lib/exportEngine.ts`
+### 8.1 修改文件：`src/lib/exportEngine.ts`
 
 **新增导出格式 `'layered'`**：
 
 ```typescript
 export interface LayeredExportInput {
-  baseSheet: string;          // base64 PNG
-  outfit?: Record<string, string>;  // { eyes: 'glasses', top: 'cape', ... }
+  baseSheet: string;
+  outfit?: Record<string, string>;
   frameWidth: number;
   frameHeight: number;
   frameCount: number;
@@ -496,37 +502,33 @@ export interface LayeredExportInput {
 export async function exportLayered(input: LayeredExportInput): Promise<Blob> {
   // 输出 zip:
   //   base.png
-  //   eyes.png, heads.png, body.png, top.png  (按 outfit 选中项)
-  //   layout.json  { frames: [{ x, y, w, h }, ...], layerOffsets: { eyes: [{x,y}, ...], ... } }
-  //   README.md  (说明如何在 PixiJS / Godot 运行时分层)
+  //   eyes.png, heads.png, body.png, top.png
+  //   layout.json
+  //   README.md
 }
 ```
 
-### 9.2 修改 UI：`src/app/export/page.tsx`
+### 8.2 修改 UI：`src/app/export/page.tsx`
 
-新增导出选项卡 **"Layered (Runtime composable)"**，与现有 6 种格式并列。说明文案：
+新增导出选项卡 **"Layered (Runtime composable)"**，与现有 6 种格式并列。
 
-> 输出分层素材包，base 角色 + 每个 outfit 部件独立 PNG + layout.json。
-> 适用场景：游戏运行时换装、桌宠动态外观切换。
-> 单层使用请选 "TexturePacker JSON Hash" 或 "Aseprite JSON"。
-
-### 9.3 修改：`src/lib/exportEngine.ts` Godot 导出器
+### 8.3 修改：`src/lib/exportEngine.ts` Godot 导出器
 
 新增可选参数 `layered: boolean`：
 
 - `false`（默认）：现有行为，单图 SpriteFrames `.tres`
-- `true`：输出多个 SpriteFrames（base + 每个 part），加一个 `character.tscn` 场景文件，预设父子节点结构（`Node2D` 父节点 + N 个 `AnimatedSprite2D` 子节点共享 frame index）
+- `true`：输出多个 SpriteFrames + 一个 `character.tscn` 场景文件
 
-### 9.4 验证标准
+### 8.4 验证标准
 
 - Layered zip 解压后，PixiJS 用 `PIXI.Container` 加载 base + 1 个 outfit 能正确显示
 - Godot 导入 layered `.tscn`，运行时 frame index 同步播放
 
 ---
 
-## 10. Phase 8：AgentHydration 接入
+## 9. Phase 8：AgentHydration 接入
 
-### 10.1 SpriteBrew 端：新增"AgentHydration 模板"
+### 9.1 SpriteBrew 端：新增"AgentHydration 模板"
 
 新增文件：`src/lib/templates/agentHydration.ts`
 
@@ -541,63 +543,37 @@ export const AGENT_HYDRATION_TEMPLATE = {
   fps: 8,
   paletteColors: 16,
   promptPrefix: 'cute pixel art chibi character, frontal view, ',
-  exportFormat: 'aseprite-json',  // PixiJS v8 native
+  exportFormat: 'aseprite-json',
 };
-
-export function buildBatchPrompts(characterDesc: string): Array<{state: string; prompt: string}> {
-  // 为 7 个状态各生成一个 prompt
-  return AGENT_HYDRATION_STATES.map(state => ({
-    state,
-    prompt: `${characterDesc}, ${getStatePromptHint(state)}`,
-  }));
-}
 ```
 
-### 10.2 SpriteBrew 端：新增 UI 入口
+### 9.2 SpriteBrew 端：新增 UI 入口
 
 新增页面：`src/app/agent-hydration/page.tsx`
 
-- 输入：角色描述（如 "blue cat with wizard hat"）+ agent type（claude / codex / gemini / default）
+- 输入：角色描述 + agent type（claude / codex / gemini / default）
 - 自动批量调 7 次 generate（每个状态 1 次），并发限制 2
 - 进度条 SSE 显示
-- 输出：zip 包含 7 个 sprite sheet + 7 个 Aseprite JSON + 1 个 `manifest.json`
+- 输出：zip 含 7 个 sprite sheet + 7 个 Aseprite JSON + 1 个 `manifest.json`
 
-`manifest.json` 格式：
-
-```json
-{
-  "agentType": "claude-code",
-  "states": {
-    "idle":     { "sheet": "idle.png",     "json": "idle.json",     "fps": 8, "frames": 6 },
-    "active":   { "sheet": "active.png",   "json": "active.json",   "fps": 8, "frames": 6 },
-    "thinking": { "sheet": "thinking.png", "json": "thinking.json", "fps": 8, "frames": 6 },
-    "coding":   { "sheet": "coding.png",   "json": "coding.json",   "fps": 8, "frames": 6 },
-    "testing":  { "sheet": "testing.png",  "json": "testing.json",  "fps": 8, "frames": 6 },
-    "error":    { "sheet": "error.png",    "json": "error.json",    "fps": 8, "frames": 6 },
-    "done":     { "sheet": "done.png",     "json": "done.json",     "fps": 8, "frames": 6 }
-  }
-}
-```
-
-### 10.3 AgentHydration 端：接入修改
+### 9.3 AgentHydration 端：接入修改
 
 > **本节修改的是 `/Users/xujingqi/Projects/AgentHydration` 项目，不是 SpriteBrew。**
 
-#### 新增目录
-
+**新增目录：**
 ```
 AgentHydration/src/lib/characters/sprites/
 ├── claude-code/
 │   ├── manifest.json
 │   ├── idle.png
 │   ├── idle.json
-│   ├── ... (其余 6 状态)
+│   └── ... (其余 6 状态)
 ├── codex-cli/
 ├── gemini-cli/
 └── default/
 ```
 
-#### 修改：`src/lib/characters/index.ts`
+**修改：`src/lib/characters/index.ts`**
 
 ```typescript
 import { Spritesheet, Assets } from 'pixi.js';
@@ -611,25 +587,22 @@ export async function loadAgentSprite(agentType: AgentType, state: AgentState) {
 }
 ```
 
-#### 修改：`src/components/design/AgentSprite.tsx`
+**修改：`src/components/design/AgentSprite.tsx`** — 用 PixiJS `AnimatedSprite` 替换 ASCII / Lottie 渲染。
 
-替换 ASCII / Lottie 渲染为 PixiJS `AnimatedSprite`：
-
-```typescript
-const sheet = createMemo(() => loadAgentSprite(props.agentType, props.state));
-// 渲染 <PixiAnimatedSprite textures={sheet().animations[state]} />
-```
-
-### 10.4 验证标准
+### 9.4 验证标准
 
 - 在 SpriteBrew `/agent-hydration` 页面输入 "blue cat" + claude-code → 生成 zip
-- 解压到 `AgentHydration/src/lib/characters/sprites/claude-code/` → 启动 AgentHydration → 4 个状态切换正常播放，无明显卡帧
+- 解压到 `AgentHydration/src/lib/characters/sprites/claude-code/` → 启动 AgentHydration → 状态切换正常播放
 
 ---
 
-## 11. 文件变更总清单
+## 10. 文件变更总清单
 
-### 新增文件（约 15 个）
+### 已完成（Phase 1）
+
+参见上文 §2.1。
+
+### 待新增（Phase 2-8，约 15 个）
 
 ```
 src/lib/imageGen/
@@ -662,34 +635,28 @@ public/parts/
 .env.local              (本地配置，不提交)
 ```
 
-### 修改文件（约 12 个）
+### 待修改（Phase 5-7，约 8 个）
 
-参见 `adaptation-plan.md` 第 7 节 + 本计划各 Phase 涉及文件。重点：
-
-- `src/app/api/generate/route.ts` — 整合所有 phase（去 auth、imageGenAdapter、后处理、部件、Animate 改造）
+- `src/app/api/generate/route.ts` — 整合 imageGenAdapter、后处理、部件、Animate 改造
 - `src/lib/styleRegistry.ts` — 字段重设
 - `src/lib/exportEngine.ts` — 新增 layered 导出
 - `src/components/sprites/GenerationForm.tsx` — 集成 OutfitPicker
 - `src/components/sprites/AnimateForm.tsx` — 帧数收窄、文案
-- `src/lib/types.ts` — 新增 `Outfit`, `LayeredExportInput` 等类型
+- `src/lib/types.ts` — 新增 `Outfit`, `LayeredExportInput`
 - `src/stores/spriteStore.ts` — 新增 outfit 字段
+- `src/app/export/page.tsx` — 新增 Layered 选项卡
 
-### 删除文件
-
-参见 `adaptation-plan.md` 第 7 节（Stripe / 登录页等）。
-
-### 新增依赖
+### 待新增依赖
 
 ```bash
 npm i sharp image-q
-npm i -D @types/sharp
 ```
 
 ---
 
-## 12. 测试与验证
+## 11. 测试与验证
 
-### 12.1 关键路径验证（每个 phase 完成后跑一遍）
+### 11.1 关键路径验证（每个 phase 完成后跑一遍）
 
 | 路径 | 验收标准 |
 |---|---|
@@ -701,15 +668,15 @@ npm i -D @types/sharp
 | Godot `.tres` 导入 | game-simulate 加载播放正常 |
 | AgentHydration 批量 | 7 状态 zip 落地后桌宠正常播放 |
 
-### 12.2 不做的测试（v1）
+### 11.2 不做的测试（v1）
 
-- 自动化单元测试（v1 手动验证即可）
+- 自动化单元测试
 - 跨浏览器兼容（仅 Chrome 验证）
-- 性能基准（v1 单用户够用）
+- 性能基准
 
 ---
 
-## 13. 风险与对策
+## 12. 风险与对策
 
 | # | 风险 | 概率 | 对策 |
 |---|---|---|---|
@@ -722,14 +689,14 @@ npm i -D @types/sharp
 
 ---
 
-## 14. 实施顺序建议
+## 13. 实施顺序建议（剩余）
 
 ```
-Day 1：
-  ☐ Phase 1（去云依赖，沿用 adaptation-plan.md）
-  ☐ Phase 2 上半（imageGenAdapter types + GPT adapter）
+Day 1（已完成 0.5 天）：
+  ☑ Phase 1（去云依赖） — commit 1196647
 
-Day 2：
+Day 1-2：
+  ☐ Phase 2 上半（imageGenAdapter types + GPT adapter）
   ☐ Phase 2 下半（Gemini adapter + index）
   ☐ Phase 3（postProcess + spritesheetSlicer）
   ☐ 手测：Create New 走通 GPT 路径
@@ -752,6 +719,31 @@ Day 5：
 
 ---
 
+## 14. Resume 指引（给下一个 Agent）
+
+如果这是新启动的会话，按以下步骤继续：
+
+1. **读本文档全文** —— 你的工作起点是 §3 (Phase 2)。
+2. **检查 git log** —— 确认 commit `1196647` 已存在，工作目录干净：
+   ```bash
+   git log --oneline -3   # 应看到 "feat(local): Phase 1 ..."
+   git status             # 应为 clean
+   ```
+3. **核对环境** —— `.env.local` 是否已配置 `OPENAI_API_KEY` 或 `GEMINI_API_KEY`。
+4. **从 Phase 2 §3.2 开始** —— 新建 `src/lib/imageGen/types.ts`，按本文档代码骨架实现。
+5. **每个 phase 完成后**：
+   - 跑 `npx tsc --noEmit` + `NODE_OPTIONS= npm run build` 确认无回归
+   - 提交 commit（消息格式参考 Phase 1: `feat(local): Phase N — <summary>`）
+   - 在本文档 §进度速览 表里把状态从 ⏳ 改为 ✅，记录 commit hash
+6. **遇到决策点**（如部件 PNG 是否拷贝、prompt 调优、Animate 帧数）—— 看 §0.1 / §12 风险表，已有方向；如仍不确定，问用户。
+
+**关键参考路径：**
+- pixabots 仓库：`/Users/xujingqi/Projects/pixabots`
+- AgentHydration 仓库：`/Users/xujingqi/Projects/AgentHydration`
+- game-simulate-project 仓库：`/Users/xujingqi/Projects/game-simulate-project`
+
+---
+
 ## 15. 后续 phase 2 候选
 
 - Animate 模式 12/16 帧
@@ -762,4 +754,4 @@ Day 5：
 
 ---
 
-*整合 adaptation-plan.md 与 pixabots 工作流，覆盖 AgentHydration + game-simulate 双消费方场景。*
+*整合 pixabots 工作流，覆盖 AgentHydration + game-simulate 双消费方场景。Phase 1 完成于 2026-04-30。*
