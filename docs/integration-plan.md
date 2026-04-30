@@ -1,7 +1,7 @@
 # SpriteBrew 整合改造实施计划（合并版）
 
 > **项目：** SpriteBrew（fork 自 GAlbanese09/spritebrew）
-> **创建：** 2026-04-30 · **最后同步：** 2026-04-30 (Phase 1 完成)
+> **创建：** 2026-04-30 · **最后同步：** 2026-04-30 (Phase 1–8 全部完成)
 > **目标：** 本地单用户部署 + GPT Image 2 / Gemini 双后端 + 整合 pixabots compositor + 适配 AgentHydration 和 game-simulate 两个消费方
 > **协议：** AGPL-3.0
 > **本文档是唯一计划源**（`adaptation-plan.md` 已合并到本文）
@@ -13,15 +13,15 @@
 | Phase | 内容 | 状态 |
 |---|---|---|
 | Phase 1 | 去云依赖（Clerk/KV/Stripe + runtime） | ✅ 完成（commit `1196647`） |
-| Phase 2 | imageGenAdapter 双后端 | ⏳ 待开始 |
-| Phase 3 | 后处理流水线 | ⏳ 待开始 |
-| Phase 4 | pixabots compositor + parts 移植 | ⏳ 待开始 |
-| Phase 5 | Create New 整合（含 outfit picker） | ⏳ 待开始 |
-| Phase 6 | Animate My Character 改造 | ⏳ 待开始 |
-| Phase 7 | 双模式导出（baked + layered） | ⏳ 待开始 |
-| Phase 8 | AgentHydration 接入 | ⏳ 待开始 |
+| Phase 2 | imageGenAdapter 双后端 | ✅ 完成（commit `f83181d`） |
+| Phase 3 | 后处理流水线 | ✅ 完成（commit `00419bf`） |
+| Phase 4 | pixabots compositor + parts 移植 | ✅ 完成（commit `97ce656`） |
+| Phase 5 | Create New 整合（含 outfit picker） | ✅ 完成（commit `56d6733`） |
+| Phase 6 | Animate My Character 改造 | ✅ 完成（commit `0bfa963`） |
+| Phase 7 | 双模式导出（baked + layered） | ✅ 完成（commit `9d58541`） |
+| Phase 8 | AgentHydration 接入（SpriteBrew 端） | ✅ 完成 |
 
-**当前可工作功能：** Create New + Animate My Character 已能本地运行（仍调用 RD API，需配 `RETRO_DIFFUSION_API_KEY`），后续 Phase 2 起替换为 GPT/Gemini。
+**当前可工作功能：** Create New + Animate My Character + Outfit Picker + Layered 导出 + AgentHydration 7 状态批量。需配置 `OPENAI_API_KEY` 或 `GEMINI_API_KEY`，并设置 `IMAGE_GEN_API_PROVIDER=gpt-image|gemini`。AgentHydration 仓库侧的 PixiJS 集成（§9.3）未做。
 
 ---
 

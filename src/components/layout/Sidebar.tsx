@@ -10,6 +10,7 @@ import {
   Sparkles,
   Images,
   MessageCircle,
+  Bot,
   X,
 } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { href: '/export', label: 'Export', icon: Download, soon: false },
   { href: '/gallery', label: 'Gallery', icon: Images, soon: false },
   { href: '/generate', label: 'Generate', icon: Sparkles, soon: false },
+  { href: '/agent-hydration', label: 'Agent Pack', icon: Bot, soon: false },
 ];
 
 interface SidebarProps {
