@@ -66,19 +66,21 @@
 `.env.local`（不提交，已在 `.gitignore`）：
 
 ```env
-# ====== AI 图片生成后端（Phase 2 起生效，二选一）======
-IMAGE_GEN_API_PROVIDER=gpt-image    # 可选：gpt-image | gemini
+# 二选一
+IMAGE_GEN_API_PROVIDER=gpt-image    # gpt-image | gemini
 
-# GPT Image 2（OpenAI gpt-image-1）
-OPENAI_API_KEY=your_openai_key_here
+# GPT Image 2（默认 gpt-image-2，2026-04 发布）
+OPENAI_BASE_URL=https://api.openai.com    # 中转站则改成中转域名（不带末尾 /）
+OPENAI_API_KEY=...
+OPENAI_IMAGE_MODEL=gpt-image-2
 
-# Gemini Nano Banana（gemini-2.5-flash-image）
-GEMINI_API_KEY=your_gemini_key_here
-
-# ====== Phase 1 临时保留 ======
-# 当前 /api/generate 仍调用 RD，Phase 2 替换为 imageGenAdapter 后可删除
-RETRO_DIFFUSION_API_KEY=your_rd_key_here
+# Nano Banana 2（默认 gemini-3.1-flash-image-preview，2026-03 发布）
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_API_KEY=...
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview
 ```
+
+详细字段说明见 `docs/usage.md` §1.2（含中转站接入策略）。
 
 **安全规则**：禁止把真实 key 写进任何 `.md` / `.ts` / git 跟踪的文件，只放在 `.env.local`。
 

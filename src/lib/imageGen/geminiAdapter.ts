@@ -1,8 +1,17 @@
-// Gemini 2.5 Flash Image adapter (a.k.a. "Nano Banana").
+// Google Gemini image-generation adapter.
 //
-// Single endpoint :generateContent serves both text-only and image-conditioned
-// requests. Transparent background is requested via prompt text — postProcess
-// is responsible for enforcing it.
+// Default model: Nano Banana 2 (gemini-3.1-flash-image-preview, 2026-03 release).
+// Older models (gemini-2.5-flash-image, gemini-3-pro-image-preview) work with
+// the same code by overriding GEMINI_IMAGE_MODEL.
+//
+// Critical: Gemini requires `responseModalities: ['TEXT', 'IMAGE']` in the
+// generationConfig — without it the model returns text only.
+//
+// Configurable via env:
+//   GEMINI_BASE_URL    e.g. https://generativelanguage.googleapis.com (default)
+//                      or a relay
+//   GEMINI_API_KEY
+//   GEMINI_IMAGE_MODEL e.g. gemini-3.1-flash-image-preview (default)
 
 import sharp from 'sharp';
 import type {
@@ -13,8 +22,8 @@ import type {
 } from './types';
 import { fetchWithRetry } from './retry';
 
-const MODEL = 'gemini-2.5-flash-image';
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
+const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview';
 
 const TRANSPARENT_BG_HINT =
   'on a fully transparent background (alpha channel, no background color, no checkerboard)';
@@ -29,15 +38,30 @@ interface GeminiResponse {
   candidates?: Array<{
     content?: { parts?: GeminiPart[] };
   }>;
+  error?: { message?: string };
+}
+
+export interface GeminiAdapterOptions {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
 }
 
 export class GeminiAdapter implements ImageGenAdapter {
   private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly model: string;
 
-  constructor(apiKey?: string) {
-    const key = apiKey ?? process.env.GEMINI_API_KEY;
+  constructor(opts: GeminiAdapterOptions = {}) {
+    const key = opts.apiKey ?? process.env.GEMINI_API_KEY;
     if (!key) throw new Error('GEMINI_API_KEY is not set.');
     this.apiKey = key;
+    this.baseUrl = trimSlash(opts.baseUrl ?? process.env.GEMINI_BASE_URL ?? DEFAULT_BASE_URL);
+    this.model = opts.model ?? process.env.GEMINI_IMAGE_MODEL ?? DEFAULT_MODEL;
+  }
+
+  private get endpoint(): string {
+    return `${this.baseUrl}/v1beta/models/${this.model}:generateContent`;
   }
 
   async generate(req: GenerateRequest): Promise<GenResult> {
@@ -59,9 +83,15 @@ export class GeminiAdapter implements ImageGenAdapter {
   }
 
   private async callApi(parts: GeminiPart[]): Promise<GenResult> {
-    const body = { contents: [{ parts }] };
+    const body = {
+      contents: [{ parts }],
+      // Required: without this Gemini returns text only and we get no image.
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+      },
+    };
 
-    const res = await fetchWithRetry(ENDPOINT, {
+    const res = await fetchWithRetry(this.endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -76,6 +106,10 @@ export class GeminiAdapter implements ImageGenAdapter {
     }
 
     const json = (await res.json()) as GeminiResponse;
+    if (json.error?.message) {
+      throw new Error(`Gemini error: ${json.error.message}`);
+    }
+
     const respParts = json.candidates?.[0]?.content?.parts ?? [];
     for (const p of respParts) {
       const inline = p.inlineData ?? p.inline_data;
@@ -88,6 +122,10 @@ export class GeminiAdapter implements ImageGenAdapter {
         };
       }
     }
-    throw new Error('Gemini returned no inline image data.');
+    throw new Error('Gemini returned no inline image data (model may have responded with text only).');
   }
+}
+
+function trimSlash(s: string): string {
+  return s.replace(/\/+$/, '');
 }

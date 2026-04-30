@@ -1,9 +1,17 @@
-// OpenAI gpt-image-1 adapter.
+// OpenAI gpt-image-2 adapter (also compatible with gpt-image-1).
 //
-// generate() → POST /v1/images/generations (text-only)
-// editWithReference() → POST /v1/images/edits (multipart with reference)
+// generate() → POST {base}/v1/images/generations (text-only, falls back to
+// edits when reference images are supplied)
+// editWithReference() → POST {base}/v1/images/edits (multipart with reference)
 //
-// Returns a 1024x1024 base64 PNG; downstream postProcess shrinks to target size.
+// Configurable via env:
+//   OPENAI_BASE_URL    e.g. https://api.openai.com (default)
+//                      or a relay like https://your-relay.com
+//   OPENAI_API_KEY
+//   OPENAI_IMAGE_MODEL e.g. gpt-image-2 (default), gpt-image-1, gpt-image-1.5
+//
+// Note: gpt-image-2 does NOT support `background: 'transparent'`; the param
+// is omitted and our postProcess pipeline handles background removal.
 
 import type {
   EditRequest,
@@ -13,17 +21,42 @@ import type {
 } from './types';
 import { fetchWithRetry } from './retry';
 
-const GENERATIONS_URL = 'https://api.openai.com/v1/images/generations';
-const EDITS_URL = 'https://api.openai.com/v1/images/edits';
-const MODEL = 'gpt-image-1';
+const DEFAULT_BASE_URL = 'https://api.openai.com';
+const DEFAULT_MODEL = 'gpt-image-2';
+
+export interface GptImageAdapterOptions {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+  quality?: 'low' | 'medium' | 'high' | 'auto';
+}
 
 export class GptImageAdapter implements ImageGenAdapter {
   private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly model: string;
+  private readonly quality: 'low' | 'medium' | 'high' | 'auto';
 
-  constructor(apiKey?: string) {
-    const key = apiKey ?? process.env.OPENAI_API_KEY;
+  constructor(opts: GptImageAdapterOptions = {}) {
+    const key = opts.apiKey ?? process.env.OPENAI_API_KEY;
     if (!key) throw new Error('OPENAI_API_KEY is not set.');
     this.apiKey = key;
+    this.baseUrl = trimSlash(opts.baseUrl ?? process.env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL);
+    this.model = opts.model ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_MODEL;
+    this.quality = opts.quality ?? 'medium';
+  }
+
+  private get generationsUrl(): string {
+    return `${this.baseUrl}/v1/images/generations`;
+  }
+
+  private get editsUrl(): string {
+    return `${this.baseUrl}/v1/images/edits`;
+  }
+
+  /** gpt-image-2 dropped `background: 'transparent'`. Older models still support it. */
+  private supportsTransparentBackground(): boolean {
+    return this.model.startsWith('gpt-image-1');
   }
 
   async generate(req: GenerateRequest): Promise<GenResult> {
@@ -35,17 +68,20 @@ export class GptImageAdapter implements ImageGenAdapter {
       });
     }
 
-    const sizeStr = pickGenerateSize(req.width, req.height);
-    const body = {
-      model: MODEL,
+    const sizeStr = pickSize(req.width, req.height);
+    const body: Record<string, unknown> = {
+      model: this.model,
       prompt: req.prompt,
       size: sizeStr,
-      quality: 'medium',
-      background: 'transparent',
+      quality: this.quality,
+      output_format: 'png',
       n: 1,
     };
+    if (this.supportsTransparentBackground()) {
+      body.background = 'transparent';
+    }
 
-    const res = await fetchWithRetry(GENERATIONS_URL, {
+    const res = await fetchWithRetry(this.generationsUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -71,21 +107,24 @@ export class GptImageAdapter implements ImageGenAdapter {
 
   async editWithReference(req: EditRequest): Promise<GenResult> {
     const canvas = req.canvasSize ?? { w: 1024, h: 1024 };
-    const sizeStr = pickEditSize(canvas.w, canvas.h);
+    const sizeStr = pickSize(canvas.w, canvas.h);
 
     const form = new FormData();
-    form.append('model', MODEL);
+    form.append('model', this.model);
     form.append('prompt', req.prompt);
     form.append('size', sizeStr);
-    form.append('quality', 'medium');
-    form.append('background', 'transparent');
+    form.append('quality', this.quality);
+    form.append('output_format', 'png');
     form.append('n', '1');
+    if (this.supportsTransparentBackground()) {
+      form.append('background', 'transparent');
+    }
 
     const buf = Buffer.from(req.referenceImage, 'base64');
     const blob = new Blob([new Uint8Array(buf)], { type: 'image/png' });
     form.append('image', blob, 'reference.png');
 
-    const res = await fetchWithRetry(EDITS_URL, {
+    const res = await fetchWithRetry(this.editsUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}` },
       body: form,
@@ -107,16 +146,17 @@ export class GptImageAdapter implements ImageGenAdapter {
   }
 }
 
-// gpt-image-1 only accepts {1024×1024, 1536×1024, 1024×1536}.
-// Pick the closest supported size for the requested aspect ratio.
-function pickEditSize(w: number, h: number): string {
+// Pick the closest preset size for the requested aspect ratio.
+// gpt-image-2 supports more sizes but the three canonical presets
+// (1024² / 1536×1024 / 1024×1536) are also valid and downstream pipeline
+// (slicer / postProcess) is tuned for them.
+function pickSize(w: number, h: number): string {
   const ratio = w / h;
   if (ratio > 1.3) return '1536x1024';
   if (ratio < 0.77) return '1024x1536';
   return '1024x1024';
 }
 
-// Same constraint applies to images.generations — same picker.
-function pickGenerateSize(w: number, h: number): string {
-  return pickEditSize(w, h);
+function trimSlash(s: string): string {
+  return s.replace(/\/+$/, '');
 }

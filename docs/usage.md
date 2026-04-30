@@ -20,17 +20,30 @@ npm install
 在仓库根目录创建 `.env.local`（已在 `.gitignore`，不会被提交）：
 
 ```env
-# 二选一：决定调哪家后端
+# ─── 选 provider ───
 IMAGE_GEN_API_PROVIDER=gpt-image      # 或 gemini
 
-# GPT Image 2（OpenAI gpt-image-1）
-OPENAI_API_KEY=sk-...
+# ─── GPT Image 2 ───────────────────────
+# 走中转站把 OPENAI_BASE_URL 改成你的中转域名（不带末尾斜杠）。
+# 中转站的 path 必须兼容 OpenAI 官方 /v1/images/generations 和 /v1/images/edits。
+OPENAI_BASE_URL=https://api.openai.com           # 默认；中转站例：https://your-relay.com
+OPENAI_API_KEY=sk-...                            # 中转站的 token（如果需要）
+OPENAI_IMAGE_MODEL=gpt-image-2                   # 默认；可换 gpt-image-1.5 / gpt-image-1 / gpt-image-1-mini
 
-# Gemini Nano Banana（gemini-2.5-flash-image）
-GEMINI_API_KEY=...
+# ─── Gemini Nano Banana 2 ──────────────
+# 同理，走中转站改 GEMINI_BASE_URL，需要兼容
+# /v1beta/models/{model}:generateContent 路径。
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com    # 默认
+GEMINI_API_KEY=AIza...
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview            # 默认（Nano Banana 2）；可换 gemini-3-pro-image-preview / gemini-2.5-flash-image
 ```
 
 **只配你要用的那家**就行，另一家可以留空。两家都配的话以 `IMAGE_GEN_API_PROVIDER` 为准。
+
+**关于中转站**：
+- OpenAI 兼容的中转站（aimlapi、openrouter、wavespeed、laozhang、第三方反代）几乎都保留了 `/v1/images/...` 这套 path，只换 host 和 token。直接把 `OPENAI_BASE_URL` 设成它们的 base host 就行（例：`https://api.openrouter.ai`）。
+- Gemini 中转站差异更大：有的兼容 Google 原生 `/v1beta/models/...` 路径，有的把 Gemini 包装成 OpenAI 格式。如果你的 Gemini 中转站用的是 OpenAI 格式（`/v1/chat/completions` 那种），**不能用** `IMAGE_GEN_API_PROVIDER=gemini`，应该用 `gpt-image` 模式 + `OPENAI_BASE_URL` 指向那个中转站，并把 `OPENAI_IMAGE_MODEL` 设成它要求的 Gemini 模型名。
+- 中转站如果 path 完全不一样（例如 `/api/v1/images`），你需要改 `src/lib/imageGen/{gptImageAdapter,geminiAdapter}.ts` 里的 `generationsUrl` / `editsUrl` / `endpoint` getter。
 
 > 老的 `RETRO_DIFFUSION_API_KEY` / Clerk / Stripe 全部不需要 —— Phase 1 已经清理掉了。
 
@@ -256,13 +269,16 @@ echo 'OPENAI_API_KEY=sk-...' >> .env.local
 
 **两家差异**（实测时关注）：
 
-| 项 | gpt-image-1 | gemini-2.5-flash-image |
+| 项 | gpt-image-2（默认）| gemini-3.1-flash-image-preview（Nano Banana 2，默认）|
 |---|---|---|
-| 画布尺寸 | 仅 1024² / 1536×1024 / 1024×1536 | 自适应（通常 1024²，可能因 prompt 不同变化）|
-| 透明背景 | API 参数 `background: 'transparent'` 直接控 | 只能在 prompt 里要求，需要 postProcess 兜底 |
-| Reference image | 走 `/v1/images/edits`（multipart）| 走同一个 `:generateContent`，inline_data 数组 |
-| 一致性 | 较稳，尤其多帧动画 | 稍弱，但提示工程余地更大 |
-| 成本 | 1024² medium ≈ $0.042/张 | $0.039/张（撰写时）|
+| 画布尺寸 | 灵活（边长 16 倍数，最长 3840px，比例 <3:1，像素 6.5w–8.3M）；我们仍用 1024²/1536×1024/1024×1536 三档 preset | 自适应（512px–4K），由模型决定 |
+| 透明背景 | **不再支持** `background: 'transparent'` 参数 → 完全交给 postProcess 兜底 | 仅靠 prompt 文本要求 + postProcess 兜底 |
+| Reference image | 走 `/v1/images/edits`（multipart，自动高保真，无需 input_fidelity）| 走同一个 `:generateContent`，inline_data 数组 |
+| 一致性 | 强；尤其多帧动画 | 较强（NB2 比 NB1 大幅提升），多角色场景宣称支持 5 角色 14 物体 |
+| 成本（1024²）| low $0.006 / medium $0.053 / high $0.211 | $0.067/张 |
+| 必传参数 | size, model | **`generationConfig.responseModalities: ['TEXT','IMAGE']`**（缺失时模型只回文本！）|
+
+> ⚠️ gpt-image-2 不支持透明背景参数 —— 角色边缘可能带浅色 fringing，靠 postProcess 的四角采样去除。如果不干净，调高 `postProcess.ts` 里的 `bgTolerance`（默认 30 → 试 40-60）。
 
 切换之后建议：
 1. 先在 Create New 跑一张静态 sprite 看背景透明度。
