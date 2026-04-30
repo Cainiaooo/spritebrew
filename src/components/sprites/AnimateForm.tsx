@@ -50,7 +50,9 @@ const ACTION_STYLE_MAP: Record<string, string> = {
   custom_action: 'rd_advanced_animation__custom_action',
 };
 
-const FRAME_COUNTS = [4, 6, 8, 10, 12, 16] as const;
+// Phase 6 narrows the v1 set to 4/6/8 — higher counts return in a later phase
+// once frame consistency at higher counts is validated.
+const FRAME_COUNTS = [4, 6, 8] as const;
 
 const BG_COLORS = [
   { id: 'black', label: 'Black', color: '#000000' },
@@ -354,7 +356,7 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
           <div className="inline-flex items-center gap-2 px-3 py-2 rounded bg-bg-elevated border border-border-default text-xs font-mono text-text-secondary">
             <Lock size={12} className="text-text-muted" />
             {currentMode.size}&times;{currentMode.size}
-            <span className="text-[10px] text-text-muted">(locked for this style by Retro Diffusion)</span>
+            <span className="text-[10px] text-text-muted">(locked for this style)</span>
           </div>
         ) : (
           <div className="flex gap-1.5">
@@ -378,7 +380,7 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
         )}
         <p className="text-[9px] font-mono text-text-muted/70 mt-1">
           {currentMode.kind === 'locked'
-            ? 'Retro Diffusion locks this style at this resolution. For higher resolutions, choose a Walking/Idle/Attack style instead.'
+            ? 'This style is locked at this resolution. For higher resolutions, choose a Walking/Idle/Attack style instead.'
             : 'Larger = more detail. Cost is flat per generation — no resolution surcharge.'}
         </p>
       </div>
