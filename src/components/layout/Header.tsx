@@ -10,8 +10,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/export': 'Export',
   '/gallery': 'Gallery',
   '/generate': 'AI Generate',
-  '/buy-tokens': 'Buy Tokens',
-  '/refund-policy': 'Refund Policy',
 };
 
 interface HeaderProps {

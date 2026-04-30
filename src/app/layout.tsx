@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import { Press_Start_2P, JetBrains_Mono } from 'next/font/google';
-import ClerkClientProvider from '@/components/layout/ClerkClientProvider';
 import AppShell from '@/components/layout/AppShell';
 import WhatsNew from '@/components/layout/WhatsNew';
 import './globals.css';
@@ -36,10 +35,8 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${pressStart.variable} ${jetbrainsMono.variable}`}>
       <body>
-        <ClerkClientProvider>
-          <AppShell>{children}</AppShell>
-          <WhatsNew />
-        </ClerkClientProvider>
+        <AppShell>{children}</AppShell>
+        <WhatsNew />
       </body>
     </html>
   );

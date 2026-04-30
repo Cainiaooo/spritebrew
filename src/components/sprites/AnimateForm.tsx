@@ -10,12 +10,10 @@ import {
   Play,
   Lock,
 } from 'lucide-react';
-import { useAuth } from '@clerk/react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
 import CharacterAutoPrep from './CharacterAutoPrep';
 import {
-  getTokenCost,
   getResolutionMode,
   ADVANCED_ANIM_RESOLUTION_PRESETS,
   ADVANCED_ANIM_DEFAULT_RESOLUTION,
@@ -66,47 +64,14 @@ interface AnimateFormProps {
 }
 
 export default function AnimateForm({ onGenerated }: AnimateFormProps) {
-  const { userId, getToken } = useAuth();
   const setGenerating = useSpriteStore((s) => s.setGenerating);
   const setGeneratingAction = useSpriteStore((s) => s.setGeneratingAction);
   const setGenerationError = useSpriteStore((s) => s.setGenerationError);
   const setGeneratedImage = useSpriteStore((s) => s.setGeneratedImage);
   const setGenerationStyle = useSpriteStore((s) => s.setGenerationStyle);
   const setOriginalCharacter = useSpriteStore((s) => s.setOriginalCharacter);
-  const setTokenBalance = useSpriteStore((s) => s.setTokenBalance);
-  const tokenBalance = useSpriteStore((s) => s.tokenBalance);
   const isGenerating = useSpriteStore((s) => s.isGenerating);
   const generationError = useSpriteStore((s) => s.generationError);
-
-  // Fetch token balance from server
-  const fetchBalance = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const token = await getToken();
-      const res = await fetch('/api/token-balance', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success) {
-        setTokenBalance(data.balance);
-        try {
-          localStorage.setItem(`spritebrew_tokens_${userId}`, String(data.balance));
-        } catch { /* localStorage unavailable */ }
-      }
-    } catch { /* network error — keep cached value */ }
-  }, [userId, getToken, setTokenBalance]);
-
-  // On mount: show cached balance immediately, then fetch server truth
-  useEffect(() => {
-    if (userId) {
-      try {
-        const cached = localStorage.getItem(`spritebrew_tokens_${userId}`);
-        if (cached) setTokenBalance(parseInt(cached, 10));
-      } catch { /* ignore */ }
-      fetchBalance();
-    }
-  }, [userId, setTokenBalance, fetchBalance]);
 
   // Character state
   const [characterDataUrl, setCharacterDataUrl] = useState<string | null>(null);
@@ -125,11 +90,7 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
   const [selectedResolution, setSelectedResolution] = useState<number>(ADVANCED_ANIM_DEFAULT_RESOLUTION);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Token cost depends on selected action
   const actionPromptStyle = ACTION_STYLE_MAP[selectedAction] ?? 'rd_advanced_animation__walking';
-  const tokenCost = getTokenCost(actionPromptStyle);
-  const insufficientTokens = tokenBalance < tokenCost;
-  const tokensNeeded = tokenCost - tokenBalance;
 
   // Resolution mode for the currently selected action's prompt style.
   // Family B (rd_advanced_animation__*) always returns a 'variable' mode 32–256.
@@ -268,10 +229,8 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
         body.motionPrompt = motionPrompt.trim();
       }
 
-      const sessionToken = await getToken();
-
       const { fetchGenerationSSE } = await import('@/lib/sseClient');
-      const data = await fetchGenerationSSE(body, sessionToken);
+      const data = await fetchGenerationSSE(body, null);
 
       if (!data.success) {
         setGenerationError(String(data.error ?? 'Animation failed — try again.'));
@@ -282,33 +241,24 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
 
       setGeneratedImage(dataUrl, dataUrl);
       setGenerationStyle(`any_animation_${selectedAction}`);
-      await fetchBalance();
       onGenerated(dataUrl, motionPrompt.trim() || selectedAction, `any_animation_${selectedAction}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      const errObj = err as Error & { balance?: number; required?: number };
-      if (errObj.balance !== undefined && errObj.required !== undefined) {
-        setGenerationError(
-          `You need ${errObj.required} tokens for this animation, but you have ${errObj.balance}. Try a cheaper action or buy more tokens!`
-        );
-        setTokenBalance(errObj.balance);
-        return;
-      }
       setGenerationError(`Connection failed — ${msg}`);
     } finally {
       setGenerating(false);
       setGeneratingAction(null);
     }
   }, [
-    characterDataUrl, isGenerating, selectedAction, selectedResolution, charWidth, charHeight,
-    frameCount, motionPrompt, convertToRgbBase64, tokenCost, getToken,
+    characterDataUrl, isGenerating, selectedAction, selectedResolution,
+    frameCount, motionPrompt, convertToRgbBase64,
     setGenerating, setGeneratingAction, setGenerationError, setGeneratedImage,
-    setGenerationStyle, setOriginalCharacter, setTokenBalance, fetchBalance, onGenerated,
+    setGenerationStyle, setOriginalCharacter, onGenerated,
   ]);
 
   const sizeWarning = charWidth > 0 && (charWidth !== selectedResolution || charHeight !== selectedResolution);
   const isCustomAction = selectedAction === 'custom_action';
-  const canGenerate = characterDataUrl && !sizeWarning && (!isCustomAction || motionPrompt.trim()) && !insufficientTokens;
+  const canGenerate = characterDataUrl && !sizeWarning && (!isCustomAction || motionPrompt.trim());
 
   return (
     <div className="space-y-6">
@@ -488,7 +438,6 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {ACTIONS.map((action) => {
             const active = selectedAction === action.id;
-            const actionCost = getTokenCost(ACTION_STYLE_MAP[action.id] ?? '');
             return (
               <button
                 key={action.id}
@@ -506,7 +455,6 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
                     {action.name}
                   </h3>
                   {active && <Check size={12} className="text-accent-amber" />}
-                  <span className="ml-auto text-[9px] font-mono text-text-muted">{actionCost} 🪙</span>
                 </div>
                 <p className="text-[10px] font-mono text-text-muted">{action.desc}</p>
               </button>
@@ -576,14 +524,7 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
       {generationError && (
         <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3">
           <AlertCircle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs font-mono text-red-400">
-            {generationError.includes('buy more tokens') ? (
-              <>
-                {generationError.replace('buy more tokens!', '')}
-                <a href="/buy-tokens" className="underline hover:text-red-300">buy more tokens</a>!
-              </>
-            ) : generationError}
-          </p>
+          <p className="text-xs font-mono text-red-400">{generationError}</p>
           <button
             onClick={() => setGenerationError(null)}
             className="ml-auto text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0"
@@ -596,34 +537,25 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
       {/* Generate button */}
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-mono text-text-muted">
-          {charWidth > 0 ? `${selectedResolution}x${selectedResolution} · ${frameCount} frames · ${tokenCost} tokens` : `Upload a character to begin (${selectedResolution}x${selectedResolution})`}
-          {userId && (
-            <span className={`ml-2 ${insufficientTokens ? 'text-red-400' : 'text-accent-amber'}`}>
-              &middot; Balance: {tokenBalance} 🪙
-            </span>
-          )}
+          {charWidth > 0
+            ? `${selectedResolution}x${selectedResolution} · ${frameCount} frames`
+            : `Upload a character to begin (${selectedResolution}x${selectedResolution})`}
         </p>
         <Button
           size="lg"
           onClick={handleGenerate}
           disabled={!canGenerate || isGenerating}
           className={!isGenerating && canGenerate ? 'animate-pulse' : ''}
-          title={insufficientTokens ? `Need ${tokensNeeded} more tokens` : undefined}
         >
           {isGenerating ? (
             <>
               <Loader2 size={16} className="animate-spin" />
               Brewing...
             </>
-          ) : insufficientTokens ? (
-            <>
-              <Play size={16} />
-              Need {tokensNeeded} more 🪙
-            </>
           ) : (
             <>
               <Play size={16} />
-              Generate Animation ({tokenCost} 🪙)
+              Generate Animation
             </>
           )}
         </Button>

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Download, Scissors, Trash2, Images, Sparkles, Play } from 'lucide-react';
-import { useAuth } from '@clerk/react';
 import {
   loadHistory,
   deleteHistoryEntry,
@@ -19,9 +18,10 @@ import Badge from '@/components/ui/Badge';
 
 type FilterTab = 'all' | 'create' | 'animate';
 
+const userId = null; // local single-user deployment
+
 export default function GalleryPage() {
   const router = useRouter();
-  const { userId } = useAuth();
   const setGeneratedImage = useSpriteStore((s) => s.setGeneratedImage);
   const setGenerationStyle = useSpriteStore((s) => s.setGenerationStyle);
   const setCurrentSheetMetadata = useSpriteStore((s) => s.setCurrentSheetMetadata);

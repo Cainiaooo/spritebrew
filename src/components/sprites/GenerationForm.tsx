@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Sparkles, X, Check, Loader2, AlertCircle } from 'lucide-react';
-import { useAuth } from '@clerk/react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
 import ReferenceImagesPanel from '@/components/sprites/ReferenceImagesPanel';
@@ -13,7 +12,6 @@ import {
   type GenerationStyle,
   type StyleCategory,
 } from '@/lib/styleRegistry';
-import { isAdminUser } from '@/lib/generationLimits';
 
 const EXAMPLE_PROMPTS = [
   'pixel art knight with sword',
@@ -33,7 +31,6 @@ const CATEGORY_LABELS: Record<StyleCategory, string> = {
   environments: 'Environments',
 };
 
-// Group styles by category for the picker
 const GROUPED_STYLES = (() => {
   const groups: Partial<Record<StyleCategory, GenerationStyle[]>> = {};
   for (const style of GENERATION_STYLES) {
@@ -54,48 +51,13 @@ interface GenerationFormProps {
 }
 
 export default function GenerationForm({ onGenerated }: GenerationFormProps) {
-  const { userId, getToken } = useAuth();
   const setGenerating = useSpriteStore((s) => s.setGenerating);
   const setGeneratingAction = useSpriteStore((s) => s.setGeneratingAction);
   const setGenerationError = useSpriteStore((s) => s.setGenerationError);
   const setGeneratedImage = useSpriteStore((s) => s.setGeneratedImage);
   const setGenerationStyle = useSpriteStore((s) => s.setGenerationStyle);
-  const setTokenBalance = useSpriteStore((s) => s.setTokenBalance);
-  const tokenBalance = useSpriteStore((s) => s.tokenBalance);
   const isGenerating = useSpriteStore((s) => s.isGenerating);
   const generationError = useSpriteStore((s) => s.generationError);
-
-  // Fetch token balance from server
-  const fetchBalance = useCallback(async () => {
-    if (!userId) return;
-    try {
-      const token = await getToken();
-      const res = await fetch('/api/token-balance', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success) {
-        setTokenBalance(data.balance);
-        try {
-          localStorage.setItem(`spritebrew_tokens_${userId}`, String(data.balance));
-        } catch { /* localStorage unavailable */ }
-      }
-    } catch { /* network error — keep cached value */ }
-  }, [userId, getToken, setTokenBalance]);
-
-  // On mount: show cached balance immediately, then fetch server truth
-  useEffect(() => {
-    if (userId) {
-      try {
-        const cached = localStorage.getItem(`spritebrew_tokens_${userId}`);
-        if (cached) setTokenBalance(parseInt(cached, 10));
-      } catch { /* ignore */ }
-      fetchBalance();
-    }
-  }, [userId, setTokenBalance, fetchBalance]);
-
-  const isAdmin = isAdminUser(userId);
 
   const [prompt, setPrompt] = useState('');
   const [selectedStyleId, setSelectedStyleId] = useState('plus-classic');
@@ -111,15 +73,9 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
 
   const referencesEnabled = selectedStyle.supportsReferenceImages === true;
 
-  const tokenCost = selectedStyle.tokenCost;
-  const insufficientTokens = tokenBalance < tokenCost;
-  const tokensNeeded = tokenCost - tokenBalance;
-
-  // Update dimensions when style changes
   useEffect(() => {
     setCustomWidth(selectedStyle.defaultWidth);
     setCustomHeight(selectedStyle.defaultHeight);
-    // Default remove_bg: on for character/item styles, off for tiles/spritesheets
     setRemoveBg(selectedStyle.supportsRemoveBg && selectedStyle.category !== 'tiles');
   }, [selectedStyle]);
 
@@ -149,33 +105,20 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         body.referenceImages = referenceImages;
       }
 
-      const sessionToken = await getToken();
       const { fetchGenerationSSE } = await import('@/lib/sseClient');
-      const data = await fetchGenerationSSE(body, sessionToken);
+      const data = await fetchGenerationSSE(body, null);
 
       if (!data.success) {
         setGenerationError(String(data.error ?? 'Generation failed — try a different prompt.'));
         return;
       }
 
-      // RD returns data URLs directly — no URL-to-blob conversion needed
       const dataUrl = data.imageUrl!;
-
       setGeneratedImage(dataUrl, dataUrl);
       setGenerationStyle(selectedStyleId);
-      // Refresh token balance from server (tokens were already debited server-side)
-      await fetchBalance();
       onGenerated(dataUrl, prompt.trim(), selectedStyleId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
-      const errObj = err as Error & { balance?: number; required?: number };
-      if (errObj.balance !== undefined && errObj.required !== undefined) {
-        setGenerationError(
-          `You need ${errObj.required} tokens for this style, but you have ${errObj.balance}. Try a cheaper style or buy more tokens!`
-        );
-        setTokenBalance(errObj.balance);
-        return;
-      }
       setGenerationError(`Connection failed — ${msg}`);
     } finally {
       setGenerating(false);
@@ -183,14 +126,13 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
     }
   }, [
     prompt, selectedStyle, selectedStyleId, effectiveWidth, effectiveHeight,
-    removeBg, referenceImages, referencesEnabled, isGenerating, tokenCost, getToken,
+    removeBg, referenceImages, referencesEnabled, isGenerating,
     setGenerating, setGeneratingAction, setGenerationError, setGeneratedImage,
-    setGenerationStyle, setTokenBalance, fetchBalance, onGenerated,
+    setGenerationStyle, onGenerated,
   ]);
 
   return (
     <div className="space-y-6">
-      {/* Prompt */}
       <div>
         <label className="block text-xs font-mono text-text-secondary uppercase tracking-wider mb-2">
           {selectedStyle.isAnimation ? 'Describe the character to animate' : 'Describe what to generate'}
@@ -223,7 +165,6 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         </div>
       </div>
 
-      {/* Style picker — grouped by category */}
       <div>
         <label className="block text-xs font-mono text-text-secondary uppercase tracking-wider mb-3">
           Style
@@ -276,14 +217,12 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         </p>
       </div>
 
-      {/* Reference Images — Pro styles only */}
       <ReferenceImagesPanel
         referenceImages={referenceImages}
         onChange={setReferenceImages}
         enabled={referencesEnabled}
       />
 
-      {/* Size controls — only if not fixed */}
       <div>
         <label className="block text-[10px] font-mono text-text-muted mb-1">
           Size: {effectiveWidth}x{effectiveHeight}
@@ -323,14 +262,8 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
             This style uses fixed {effectiveWidth}x{effectiveHeight} dimensions.
           </p>
         )}
-        {!selectedStyle.fixedSize && (
-          <p className="text-[9px] font-mono text-text-muted/70 mt-1">
-            Larger canvas = more room for detail and extended poses. Tokens scale with canvas size.
-          </p>
-        )}
       </div>
 
-      {/* Remove Background toggle */}
       {selectedStyle.supportsRemoveBg && (
         <label className="flex items-center gap-2 text-xs font-mono text-text-secondary cursor-pointer">
           <input
@@ -343,18 +276,10 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         </label>
       )}
 
-      {/* Error */}
       {generationError && (
         <div className="flex items-start gap-2 rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-3">
           <AlertCircle size={14} className="text-red-400 flex-shrink-0 mt-0.5" />
-          <p className="text-xs font-mono text-red-400">
-            {generationError.includes('buy more tokens') ? (
-              <>
-                {generationError.replace('buy more tokens!', '')}
-                <a href="/buy-tokens" className="underline hover:text-red-300">buy more tokens</a>!
-              </>
-            ) : generationError}
-          </p>
+          <p className="text-xs font-mono text-red-400">{generationError}</p>
           <button
             onClick={() => setGenerationError(null)}
             className="ml-auto text-red-400 hover:text-red-300 cursor-pointer flex-shrink-0"
@@ -364,40 +289,25 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         </div>
       )}
 
-      {/* Generate button */}
       <div className="flex items-center justify-between">
         <p className="text-[10px] font-mono text-text-muted">
-          {effectiveWidth}x{effectiveHeight}px &middot; {tokenCost} tokens
-          {isAdmin && (
-            <span> &middot; ~${selectedStyle.costPerGeneration.toFixed(2)}</span>
-          )}
-          {userId && (
-            <span className={`ml-2 ${insufficientTokens ? 'text-red-400' : 'text-accent-amber'}`}>
-              &middot; Balance: {tokenBalance} 🪙
-            </span>
-          )}
+          {effectiveWidth}x{effectiveHeight}px
         </p>
         <Button
           size="lg"
           onClick={handleGenerate}
-          disabled={!prompt.trim() || isGenerating || insufficientTokens}
-          className={!isGenerating && prompt.trim() && !insufficientTokens ? 'animate-pulse' : ''}
-          title={insufficientTokens ? `Need ${tokensNeeded} more tokens` : undefined}
+          disabled={!prompt.trim() || isGenerating}
+          className={!isGenerating && prompt.trim() ? 'animate-pulse' : ''}
         >
           {isGenerating ? (
             <>
               <Loader2 size={16} className="animate-spin" />
               Brewing...
             </>
-          ) : insufficientTokens ? (
-            <>
-              <Sparkles size={16} />
-              Need {tokensNeeded} more 🪙
-            </>
           ) : (
             <>
               <Sparkles size={16} />
-              {selectedStyle.isAnimation ? 'Generate Animation' : 'Generate Sprite'} ({tokenCost} 🪙)
+              {selectedStyle.isAnimation ? 'Generate Animation' : 'Generate Sprite'}
             </>
           )}
         </Button>

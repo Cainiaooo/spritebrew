@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Download, Scissors, RefreshCw, Archive, Trash2, ArrowRight, Eraser } from 'lucide-react';
-import { useAuth } from '@clerk/react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
 import BrewingLoader from './BrewingLoader';
@@ -21,9 +20,10 @@ interface GenerationResultProps {
   onReset: () => void;
 }
 
+const userId = null; // local single-user deployment
+
 export default function GenerationResult({ onReset }: GenerationResultProps) {
   const router = useRouter();
-  const { userId } = useAuth();
   const generatedImageDataUrl = useSpriteStore((s) => s.generatedImageDataUrl);
   const isGenerating = useSpriteStore((s) => s.isGenerating);
   const generatingAction = useSpriteStore((s) => s.generatingAction);
