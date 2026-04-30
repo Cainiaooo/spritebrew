@@ -4,6 +4,7 @@
 // requests. Transparent background is requested via prompt text — postProcess
 // is responsible for enforcing it.
 
+import sharp from 'sharp';
 import type {
   EditRequest,
   GenResult,
@@ -79,10 +80,11 @@ export class GeminiAdapter implements ImageGenAdapter {
     for (const p of respParts) {
       const inline = p.inlineData ?? p.inline_data;
       if (inline?.data) {
+        const meta = await sharp(Buffer.from(inline.data, 'base64')).metadata();
         return {
           rawBase64Image: inline.data,
-          rawWidth: 1024,
-          rawHeight: 1024,
+          rawWidth: meta.width ?? 1024,
+          rawHeight: meta.height ?? 1024,
         };
       }
     }

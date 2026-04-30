@@ -31,13 +31,15 @@ export class GptImageAdapter implements ImageGenAdapter {
       return this.editWithReference({
         referenceImage: req.referenceImages[0],
         prompt: req.prompt,
+        canvasSize: { w: req.width, h: req.height },
       });
     }
 
+    const sizeStr = pickGenerateSize(req.width, req.height);
     const body = {
       model: MODEL,
       prompt: req.prompt,
-      size: '1024x1024',
+      size: sizeStr,
       quality: 'medium',
       background: 'transparent',
       n: 1,
@@ -63,7 +65,8 @@ export class GptImageAdapter implements ImageGenAdapter {
     const b64 = json.data?.[0]?.b64_json;
     if (!b64) throw new Error('OpenAI returned no image data.');
 
-    return { rawBase64Image: b64, rawWidth: 1024, rawHeight: 1024 };
+    const [w, h] = sizeStr.split('x').map(Number);
+    return { rawBase64Image: b64, rawWidth: w, rawHeight: h };
   }
 
   async editWithReference(req: EditRequest): Promise<GenResult> {
@@ -104,11 +107,16 @@ export class GptImageAdapter implements ImageGenAdapter {
   }
 }
 
-// gpt-image-1 only accepts a fixed set of sizes — pick the closest
-// supported size for the requested canvas.
+// gpt-image-1 only accepts {1024×1024, 1536×1024, 1024×1536}.
+// Pick the closest supported size for the requested aspect ratio.
 function pickEditSize(w: number, h: number): string {
   const ratio = w / h;
   if (ratio > 1.3) return '1536x1024';
   if (ratio < 0.77) return '1024x1536';
   return '1024x1024';
+}
+
+// Same constraint applies to images.generations — same picker.
+function pickGenerateSize(w: number, h: number): string {
+  return pickEditSize(w, h);
 }

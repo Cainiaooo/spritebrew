@@ -241,18 +241,16 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
   const frameSize = body.width ?? 64;
   const action = body.action!;
   const motion = body.motionPrompt?.trim() ?? '';
+  const layout = pickAnimationLayout(frameCount);
 
   const actionPrefix = ACTION_PROMPT_PREFIX[action] ?? '';
   const customMotion = action === 'custom_action' ? (motion || 'smooth animation') : '';
-  const promptParts = [
-    `${frameCount}-frame ${actionPrefix} sprite sheet of this character`,
-    'horizontal layout, evenly spaced frames',
-    `each frame ${frameSize}x${frameSize} pixels`,
-    'pixel art style, transparent background',
-    'character must remain visually identical across all frames',
-    customMotion || motion,
-  ].filter(Boolean);
-  const prompt = promptParts.join(', ');
+  const prompt = buildAnimatePrompt({
+    frameCount,
+    layout,
+    actionPrefix,
+    extraMotion: customMotion || motion,
+  });
 
   const referenceB64 = body.inputImage!.replace(/^data:image\/[a-z]+;base64,/, '');
   const adapter = getImageGenAdapter();
@@ -260,10 +258,15 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
   const raw = await adapter.editWithReference({
     referenceImage: referenceB64,
     prompt,
-    canvasSize: { w: frameCount * 256, h: 256 },
+    canvasSize: { w: layout.canvasW, h: layout.canvasH },
   });
 
-  const frames = await detectAndSliceFrames(raw.rawBase64Image, frameCount, frameSize);
+  const frames = await detectAndSliceFrames(
+    raw.rawBase64Image,
+    { cols: layout.cols, rows: layout.rows },
+    frameCount,
+    frameSize,
+  );
   let composed = await composeFramesHorizontally(frames, frameSize);
 
   if (body.outfit && Object.keys(body.outfit).length > 0) {
@@ -273,14 +276,80 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
   return {
     success: true,
     imageUrl: `data:image/png;base64,${composed}`,
-    prediction: { status: 'succeeded', cost: raw.cost, frameCount },
+    prediction: {
+      status: 'succeeded',
+      cost: raw.cost,
+      frameCount,
+      layout: `${layout.cols}x${layout.rows}`,
+      sourcePxPerFrame: `${Math.floor(layout.canvasW / layout.cols)}x${Math.floor(layout.canvasH / layout.rows)}`,
+    },
   };
 }
 
 // ── Helpers ──
 
-function buildCreatePrompt(userPrompt: string, prefix: string, w: number, h: number, transparent: boolean): string {
-  const parts = [prefix, userPrompt, `${w}x${h} pixels`];
-  if (transparent) parts.push('transparent background');
+interface AnimationLayout {
+  cols: number;
+  rows: number;
+  canvasW: number;
+  canvasH: number;
+}
+
+// Pack frames into a 2D grid that fills one of gpt-image-1's three supported
+// canvas sizes. This gives ~512px per cell vs ~170px in a single-row 1024px
+// strip — same API cost, ~9× more source pixels per frame.
+function pickAnimationLayout(frameCount: number): AnimationLayout {
+  switch (frameCount) {
+    case 4:
+      return { cols: 2, rows: 2, canvasW: 1024, canvasH: 1024 };
+    case 6:
+      return { cols: 3, rows: 2, canvasW: 1536, canvasH: 1024 };
+    case 8:
+      return { cols: 4, rows: 2, canvasW: 1536, canvasH: 1024 };
+    default:
+      return { cols: frameCount, rows: 1, canvasW: 1536, canvasH: 1024 };
+  }
+}
+
+function buildAnimatePrompt(args: {
+  frameCount: number;
+  layout: AnimationLayout;
+  actionPrefix: string;
+  extraMotion: string;
+}): string {
+  const { frameCount, layout, actionPrefix, extraMotion } = args;
+  const parts = [
+    `Generate a ${frameCount}-frame ${actionPrefix} animation of this character.`,
+    `Output a single image arranged in a ${layout.cols}-column by ${layout.rows}-row grid of equally-sized cells.`,
+    'Frame order is reading order: left-to-right within each row, then top-to-bottom across rows.',
+    'Every cell has identical size; the character is centered in each cell at the same scale.',
+    'Pixel art style. Use a fully transparent background (alpha 0) — no checker pattern, no white fill, no visible gridlines between cells.',
+    `Critical: the character\'s appearance, color palette, proportions, and outfit must remain identical across all ${frameCount} frames — only the pose changes from frame to frame.`,
+    extraMotion,
+  ];
+  return parts.filter(Boolean).join(' ');
+}
+
+// Create New: we generate at the API canvas size (1024² / 1536×1024 / 1024×1536)
+// and downsample to the user's target. The prompt mentions the target density
+// so the model designs the silhouette to read clearly when downsampled, but
+// avoids stating the literal output pixel count which the model treats as a
+// raw size constraint.
+function buildCreatePrompt(
+  userPrompt: string,
+  prefix: string,
+  w: number,
+  h: number,
+  transparent: boolean,
+): string {
+  const parts = [
+    prefix,
+    userPrompt,
+    `pixel art style, designed to read clearly when downsampled to a ${w}x${h} sprite`,
+    'subject centered with empty margin around it',
+  ];
+  if (transparent) {
+    parts.push('fully transparent background, no background color, no environment');
+  }
   return parts.join(', ');
 }

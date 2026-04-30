@@ -1,20 +1,30 @@
-// Slice a raw multi-frame sprite sheet (returned by editWithReference) into
-// individual frames, then run each frame through postProcessSprite.
-//
-// Strategy: assume horizontal even layout — divide sheet width by frame count,
-// process each slice independently, return N base64 PNGs.
+// Slice a multi-frame raw image into individual frames, then run each through
+// postProcessSprite. Supports 2D grid layouts: the AI is asked to lay frames
+// out as `cols × rows` cells in reading order, which packs ~9× more source
+// pixels per frame than a single-row 1024px layout (e.g. 512px vs 170px).
 
 import sharp from 'sharp';
 import { postProcessSprite } from './postProcess';
 
+export interface SliceLayout {
+  cols: number;
+  rows: number;
+}
+
 export async function detectAndSliceFrames(
   rawBase64: string,
+  layout: SliceLayout,
   expectedFrameCount: number,
   targetFrameSize: number,
   paletteColors?: number,
 ): Promise<string[]> {
   if (expectedFrameCount < 1) {
     throw new Error(`detectAndSliceFrames: invalid frame count ${expectedFrameCount}`);
+  }
+  if (layout.cols * layout.rows < expectedFrameCount) {
+    throw new Error(
+      `detectAndSliceFrames: layout ${layout.cols}×${layout.rows} can't hold ${expectedFrameCount} frames`,
+    );
   }
 
   const buf = Buffer.from(rawBase64, 'base64');
@@ -23,19 +33,24 @@ export async function detectAndSliceFrames(
   const h = meta.height;
   if (!w || !h) throw new Error('detectAndSliceFrames: input has no dimensions.');
 
-  const frameW = Math.floor(w / expectedFrameCount);
-  const frames: string[] = [];
+  const cellW = Math.floor(w / layout.cols);
+  const cellH = Math.floor(h / layout.rows);
 
+  const frames: string[] = [];
   for (let i = 0; i < expectedFrameCount; i++) {
-    const left = i * frameW;
-    const width = i === expectedFrameCount - 1 ? w - left : frameW;
+    const col = i % layout.cols;
+    const row = Math.floor(i / layout.cols);
+    const left = col * cellW;
+    const top = row * cellH;
+    const width = col === layout.cols - 1 ? w - left : cellW;
+    const height = row === layout.rows - 1 ? h - top : cellH;
+
     const sliceBuf = await sharp(buf)
-      .extract({ left, top: 0, width, height: h })
+      .extract({ left, top, width, height })
       .png()
       .toBuffer();
 
-    const sliceB64 = sliceBuf.toString('base64');
-    const processed = await postProcessSprite(sliceB64, {
+    const processed = await postProcessSprite(sliceBuf.toString('base64'), {
       targetWidth: targetFrameSize,
       targetHeight: targetFrameSize,
       paletteColors,
@@ -46,8 +61,8 @@ export async function detectAndSliceFrames(
   return frames;
 }
 
-// Stitch processed frames back into a single horizontal sprite sheet.
-// Each frame is targetFrameSize x targetFrameSize PNG.
+// Stitch processed frames into a single horizontal sprite sheet.
+// Output is always horizontal (engine consumers expect single-row strips).
 export async function composeFramesHorizontally(
   frames: string[],
   frameSize: number,
