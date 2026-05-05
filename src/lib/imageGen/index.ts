@@ -1,13 +1,17 @@
 // Factory that returns the configured ImageGenAdapter.
 //
 // Provider is chosen at runtime via IMAGE_GEN_API_PROVIDER:
-//   gpt-image (default) → GptImageAdapter
+//   gpt-image           → GptImageAdapter (POST /v1/images/generations)
+//   gpt-image-responses → GptImageResponsesAdapter (POST /v1/responses,
+//                         streaming, for relays like co.yes.vg that only
+//                         expose the unified Responses API)
 //   gemini              → GeminiAdapter
 //
 // Result is memoized per provider so subsequent calls reuse the same instance.
 
 import { GeminiAdapter } from './geminiAdapter';
 import { GptImageAdapter } from './gptImageAdapter';
+import { GptImageResponsesAdapter } from './gptImageResponsesAdapter';
 import type { ImageGenAdapter, ImageGenProvider } from './types';
 
 export type { GenerateRequest, EditRequest, GenResult, ImageGenAdapter, ImageGenProvider } from './types';
@@ -23,6 +27,9 @@ export function getImageGenAdapter(): ImageGenAdapter {
   switch (provider) {
     case 'gpt-image':
       adapter = new GptImageAdapter();
+      break;
+    case 'gpt-image-responses':
+      adapter = new GptImageResponsesAdapter();
       break;
     case 'gemini':
       adapter = new GeminiAdapter();

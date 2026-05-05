@@ -103,13 +103,35 @@ npm install
 cp .env.example .env.local
 ```
 
-Add your API keys to `.env.local`:
+Add your API keys to `.env.local`. This local fork uses **GPT Image** or **Gemini** as the AI backend, switchable via one env var. Pick whichever provider matches the API key you have:
+
+```env
+# Pick one provider
+IMAGE_GEN_API_PROVIDER=gpt-image      # or: gpt-image-responses / gemini
+
+# ── GPT Image (OpenAI-native or OpenAI-compatible relay) ──
+OPENAI_BASE_URL=https://api.openai.com    # default; relay: https://your-relay.com
+OPENAI_API_KEY=sk-...
+OPENAI_IMAGE_MODEL=gpt-image-2            # default
+
+# ── GPT Image via Responses API (relay-only mode, e.g. co.yes.vg) ──
+# Some relays only expose /v1/responses (not /v1/images/generations).
+# They also encode the output size into the model name suffix
+# (gpt-image-1024x1536). Use this provider for those:
+#
+# IMAGE_GEN_API_PROVIDER=gpt-image-responses
+# OPENAI_BASE_URL=https://co.yes.vg
+# OPENAI_API_KEY=team-xxxx
+# OPENAI_IMAGE_MODEL=gpt-image            # prefix only — adapter appends size
+
+# ── Gemini Nano Banana 2 ──
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_API_KEY=AIza...
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview
 ```
-REPLICATE_API_TOKEN=your_replicate_token
-RETRO_DIFFUSION_API_KEY=your_retrodiffusion_key
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key
-CLERK_SECRET_KEY=your_clerk_secret_key
-```
+
+Only fill in the provider you've selected — the other section can stay empty. Detailed per-provider notes (relay quirks, model name conventions, transparent-background handling) are in [`docs/usage.md`](docs/usage.md).
+
 ```bash
 # Run development server
 npm run dev

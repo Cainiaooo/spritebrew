@@ -26,4 +26,4 @@ export interface ImageGenAdapter {
   editWithReference(req: EditRequest): Promise<GenResult>;
 }
 
-export type ImageGenProvider = 'gpt-image' | 'gemini';
+export type ImageGenProvider = 'gpt-image' | 'gpt-image-responses' | 'gemini';

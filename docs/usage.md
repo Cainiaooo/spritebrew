@@ -21,14 +21,37 @@ npm install
 
 ```env
 # ─── 选 provider ───
-IMAGE_GEN_API_PROVIDER=gpt-image      # 或 gemini
+IMAGE_GEN_API_PROVIDER=gpt-image      # 或 gpt-image-responses / gemini
 
-# ─── GPT Image 2 ───────────────────────
+# ─── GPT Image 2（OpenAI 原生 / OpenAI 兼容中转站）─────────
 # 走中转站把 OPENAI_BASE_URL 改成你的中转域名（不带末尾斜杠）。
 # 中转站的 path 必须兼容 OpenAI 官方 /v1/images/generations 和 /v1/images/edits。
 OPENAI_BASE_URL=https://api.openai.com           # 默认；中转站例：https://your-relay.com
 OPENAI_API_KEY=sk-...                            # 中转站的 token（如果需要）
 OPENAI_IMAGE_MODEL=gpt-image-2                   # 默认；可换 gpt-image-1.5 / gpt-image-1 / gpt-image-1-mini
+
+# ─── GPT Image via Responses API（中转站常见模式）──────────
+# 部分国内中转站（co.yes.vg、类似的团队 token 反代）只暴露统一的
+# /v1/responses 端点，把图像生成走在 Responses API 上，且尺寸编进
+# 模型名后缀（gpt-image-1024x1536 = 输出 1024×1536）。这种站点的
+# 鉴权 / base URL / key 名都和 OpenAI 一样，只是 endpoint 形态不同
+# —— 切到这个 provider，复用同一组 OPENAI_* 变量即可。
+#
+# 对应的相同请求 curl 形式：
+#   curl -X POST 'https://co.yes.vg/v1/responses' \
+#     -H 'Authorization: Bearer team-xxxx' \
+#     -H 'Content-Type: application/json' \
+#     -d '{"model":"gpt-image-1024x1536","input":[{"type":"message",
+#          "role":"user","content":[{"type":"input_text","text":"..."}]}],
+#          "stream":true,"store":false}'
+#
+# 切换：
+#   IMAGE_GEN_API_PROVIDER=gpt-image-responses
+#   OPENAI_BASE_URL=https://co.yes.vg                # 你的中转域名
+#   OPENAI_API_KEY=team-xxxx                         # 中转站颁发的 team / sk token
+#   OPENAI_IMAGE_MODEL=gpt-image                     # 模型名前缀；尺寸后缀由 adapter
+#                                                    # 自动按宽高比补 -1024x1024 / -1536x1024 /
+#                                                    # -1024x1536（不要自己拼好后缀写在这里）
 
 # ─── Gemini Nano Banana 2 ──────────────
 # 同理，走中转站改 GEMINI_BASE_URL，需要兼容
@@ -41,9 +64,10 @@ GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview            # 默认（Nano Ban
 **只配你要用的那家**就行，另一家可以留空。两家都配的话以 `IMAGE_GEN_API_PROVIDER` 为准。
 
 **关于中转站**：
-- OpenAI 兼容的中转站（aimlapi、openrouter、wavespeed、laozhang、第三方反代）几乎都保留了 `/v1/images/...` 这套 path，只换 host 和 token。直接把 `OPENAI_BASE_URL` 设成它们的 base host 就行（例：`https://api.openrouter.ai`）。
+- OpenAI 兼容的中转站（aimlapi、openrouter、wavespeed、laozhang、第三方反代）几乎都保留了 `/v1/images/...` 这套 path，只换 host 和 token。直接把 `OPENAI_BASE_URL` 设成它们的 base host 就行（例：`https://api.openrouter.ai`），仍用 `IMAGE_GEN_API_PROVIDER=gpt-image`。
+- 部分国内中转站（co.yes.vg 等）只走 Responses API（`/v1/responses` + 流式 + 尺寸进模型名），用 `IMAGE_GEN_API_PROVIDER=gpt-image-responses`，详见上面 `.env.local` 注释段。判断方法：看官方 curl 是不是 `/v1/responses` + `model: 'gpt-image-1024x1024'` 这种形态。
 - Gemini 中转站差异更大：有的兼容 Google 原生 `/v1beta/models/...` 路径，有的把 Gemini 包装成 OpenAI 格式。如果你的 Gemini 中转站用的是 OpenAI 格式（`/v1/chat/completions` 那种），**不能用** `IMAGE_GEN_API_PROVIDER=gemini`，应该用 `gpt-image` 模式 + `OPENAI_BASE_URL` 指向那个中转站，并把 `OPENAI_IMAGE_MODEL` 设成它要求的 Gemini 模型名。
-- 中转站如果 path 完全不一样（例如 `/api/v1/images`），你需要改 `src/lib/imageGen/{gptImageAdapter,geminiAdapter}.ts` 里的 `generationsUrl` / `editsUrl` / `endpoint` getter。
+- 中转站如果 path 完全不一样（例如 `/api/v1/images`），你需要改 `src/lib/imageGen/{gptImageAdapter,gptImageResponsesAdapter,geminiAdapter}.ts` 里的 `generationsUrl` / `editsUrl` / `url` getter。
 
 > 老的 `RETRO_DIFFUSION_API_KEY` / Clerk / Stripe 全部不需要 —— Phase 1 已经清理掉了。
 
@@ -255,16 +279,24 @@ agent-hydration_{agentType}.zip
 
 ---
 
-## 8. Provider 切换（GPT vs Gemini）
+## 8. Provider 切换（GPT vs GPT-Responses 中转站 vs Gemini）
 
 ```bash
 # 切到 Gemini
 echo 'IMAGE_GEN_API_PROVIDER=gemini' > .env.local
 echo 'GEMINI_API_KEY=AIza...' >> .env.local
 
-# 切回 GPT Image
+# 切回 GPT Image（OpenAI 原生 / OpenAI 兼容中转站）
 echo 'IMAGE_GEN_API_PROVIDER=gpt-image' > .env.local
 echo 'OPENAI_API_KEY=sk-...' >> .env.local
+
+# 切到 Responses-API 中转站（co.yes.vg 等只暴露 /v1/responses 的反代）
+cat > .env.local <<'EOF'
+IMAGE_GEN_API_PROVIDER=gpt-image-responses
+OPENAI_BASE_URL=https://co.yes.vg
+OPENAI_API_KEY=team-xxxx
+OPENAI_IMAGE_MODEL=gpt-image
+EOF
 ```
 
 **两家差异**（实测时关注）：
