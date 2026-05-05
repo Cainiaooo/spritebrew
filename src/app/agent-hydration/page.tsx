@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Download, AlertCircle, Check } from 'lucide-react';
+import { Loader2, Download, AlertCircle, AlertTriangle, Check } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { downloadAsZip } from '@/lib/downloadUtils';
@@ -19,11 +19,17 @@ import {
 
 const DATA_URI_PREFIX_RE = /^data:image\/[a-z]+;base64,/;
 
+interface QaWarning {
+  code: string;
+  message: string;
+}
+
 interface StateProgress {
   state: AgentHydrationState;
   status: 'pending' | 'running' | 'done' | 'error';
   imageUrl?: string;
   error?: string;
+  warnings?: QaWarning[];
 }
 
 export default function AgentHydrationPage() {
@@ -92,7 +98,10 @@ export default function AgentHydrationPage() {
           throw new Error(String(data.error ?? 'No image returned'));
         }
 
-        results[i] = { ...results[i], status: 'done', imageUrl: data.imageUrl };
+        const warnings = Array.isArray(data.qaWarnings)
+          ? (data.qaWarnings as QaWarning[])
+          : undefined;
+        results[i] = { ...results[i], status: 'done', imageUrl: data.imageUrl, warnings };
         if (isIdle && typeof data.imageUrl === 'string') {
           canonicalBaseB64 = data.imageUrl.replace(DATA_URI_PREFIX_RE, '');
         }
@@ -304,6 +313,19 @@ export default function AgentHydrationPage() {
                 )}
                 {p.error && (
                   <p className="text-[9px] font-mono text-red-400 truncate">{p.error}</p>
+                )}
+                {p.warnings && p.warnings.length > 0 && (
+                  <div
+                    className="flex items-start gap-1 text-[9px] font-mono text-amber-400/80"
+                    title={p.warnings.map((w) => `${w.code}: ${w.message}`).join('\n')}
+                  >
+                    <AlertTriangle size={10} className="flex-shrink-0 mt-0.5" />
+                    <span className="truncate">
+                      {p.warnings.length === 1
+                        ? p.warnings[0].code
+                        : `${p.warnings.length} warnings`}
+                    </span>
+                  </div>
                 )}
               </div>
             ))}

@@ -14,6 +14,7 @@ import {
   composeFramesHorizontally,
   detectAndSliceFrames,
 } from '@/lib/imageGen/spritesheetSlicer';
+import { qaFrameSheet, qaSingleSprite } from '@/lib/imageGen/qa';
 import {
   applyOutfitBase64,
   applyOutfitToSheet,
@@ -227,10 +228,13 @@ async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
     processed = await applyOutfitBase64(processed, body.outfit);
   }
 
+  const qaWarnings = await qaSingleSprite(processed);
+
   return {
     success: true,
     imageUrl: `data:image/png;base64,${processed}`,
     prediction: { status: 'succeeded', cost: raw.cost },
+    qaWarnings,
   };
 }
 
@@ -267,6 +271,11 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
     frameCount,
     frameSize,
   );
+
+  // QA the per-frame array before stitching — sheet-level QA can't catch
+  // size variation across frames once they've been packed into one image.
+  const qaWarnings = await qaFrameSheet(frames);
+
   let composed = await composeFramesHorizontally(frames, frameSize);
 
   if (body.outfit && Object.keys(body.outfit).length > 0) {
@@ -283,6 +292,7 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
       layout: `${layout.cols}x${layout.rows}`,
       sourcePxPerFrame: `${Math.floor(layout.canvasW / layout.cols)}x${Math.floor(layout.canvasH / layout.rows)}`,
     },
+    qaWarnings,
   };
 }
 
