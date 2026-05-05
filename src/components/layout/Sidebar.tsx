@@ -11,6 +11,7 @@ import {
   Images,
   MessageCircle,
   Bot,
+  Egg,
   X,
 } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
@@ -24,6 +25,7 @@ const NAV_ITEMS = [
   { href: '/gallery', label: 'Gallery', icon: Images, soon: false },
   { href: '/generate', label: 'Generate', icon: Sparkles, soon: false },
   { href: '/agent-hydration', label: 'Agent Pack', icon: Bot, soon: false },
+  { href: '/codex-pet', label: 'Codex Pet', icon: Egg, soon: false },
 ];
 
 interface SidebarProps {

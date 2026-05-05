@@ -10,6 +10,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/export': 'Export',
   '/gallery': 'Gallery',
   '/generate': 'AI Generate',
+  '/agent-hydration': 'Agent Pack',
+  '/codex-pet': 'Codex Pet',
 };
 
 interface HeaderProps {
