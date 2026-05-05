@@ -36,6 +36,12 @@ export const STATE_PROMPT_SUFFIX: Record<AgentHydrationState, string> = {
   done: 'celebrating with arms raised, happy',
 };
 
+// Appended to non-idle state prompts. Idle is generated first as the canonical
+// base; subsequent states pass it back as a reference image and use this lock
+// to keep silhouette/palette/proportions stable across the 7-state pack.
+export const IDENTITY_LOCK_SUFFIX =
+  'Identity lock: do not redesign the character. Preserve the exact head shape, face, markings, color palette, outline weight, body proportions, outfit, and silhouette of the reference image. Only change the pose to match the requested state.';
+
 export interface AgentHydrationConfig {
   size: number;
   framesPerState: number;

@@ -320,11 +320,12 @@ function buildAnimatePrompt(args: {
   const { frameCount, layout, actionPrefix, extraMotion } = args;
   const parts = [
     `Generate a ${frameCount}-frame ${actionPrefix} animation of this character.`,
+    'Identity lock: do not redesign the character. Preserve the exact head shape, face, markings, color palette, outline weight, body proportions, outfit, and silhouette of the reference image. Only the pose changes from frame to frame.',
     `Output a single image arranged in a ${layout.cols}-column by ${layout.rows}-row grid of equally-sized cells.`,
     'Frame order is reading order: left-to-right within each row, then top-to-bottom across rows.',
     'Every cell has identical size; the character is centered in each cell at the same scale.',
     'Pixel art style. Use a fully transparent background (alpha 0) — no checker pattern, no white fill, no visible gridlines between cells.',
-    `Critical: the character\'s appearance, color palette, proportions, and outfit must remain identical across all ${frameCount} frames — only the pose changes from frame to frame.`,
+    'Do not draw speed lines, motion arcs, afterimages, smears, dust clouds, cast shadows, drop shadows, glow, halo, aura, text, labels, frame numbers, or floating symbols.',
     extraMotion,
   ];
   return parts.filter(Boolean).join(' ');

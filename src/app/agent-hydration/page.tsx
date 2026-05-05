@@ -12,9 +12,12 @@ import {
   AGENT_HYDRATION_AGENT_TYPES,
   AGENT_HYDRATION_TEMPLATE,
   STATE_PROMPT_SUFFIX,
+  IDENTITY_LOCK_SUFFIX,
   type AgentHydrationAgentType,
   type AgentHydrationState,
 } from '@/lib/templates/agentHydration';
+
+const DATA_URI_PREFIX_RE = /^data:image\/[a-z]+;base64,/;
 
 interface StateProgress {
   state: AgentHydrationState;
@@ -45,12 +48,31 @@ export default function AgentHydrationPage() {
     const tmpl = AGENT_HYDRATION_TEMPLATE;
     const results: StateProgress[] = [...initial];
 
+    // Idle generates first (no reference) and becomes the canonical base for
+    // the remaining states. They pass it back as a reference image plus the
+    // identity-lock suffix so silhouette/palette/proportions stay coherent.
+    let canonicalBaseB64: string | null = null;
+
     for (let i = 0; i < AGENT_HYDRATION_STATES.length; i++) {
       const state = AGENT_HYDRATION_STATES[i];
+      const isIdle = state === 'idle';
+
+      if (!isIdle && !canonicalBaseB64) {
+        results[i] = {
+          ...results[i],
+          status: 'error',
+          error: 'idle base unavailable — cannot identity-lock this state',
+        };
+        setProgress([...results]);
+        continue;
+      }
+
       results[i] = { ...results[i], status: 'running' };
       setProgress([...results]);
 
-      const prompt = `${tmpl.promptPrefix}, ${description.trim()}, ${STATE_PROMPT_SUFFIX[state]}`;
+      const promptParts = [tmpl.promptPrefix, description.trim(), STATE_PROMPT_SUFFIX[state]];
+      if (!isIdle) promptParts.push(IDENTITY_LOCK_SUFFIX);
+      const prompt = promptParts.join(', ');
 
       try {
         const data = await fetchGenerationSSE(
@@ -61,6 +83,7 @@ export default function AgentHydrationPage() {
             width: tmpl.size,
             height: tmpl.size,
             removeBg: true,
+            ...(isIdle ? {} : { referenceImages: [canonicalBaseB64!] }),
           },
           null,
         );
@@ -70,6 +93,9 @@ export default function AgentHydrationPage() {
         }
 
         results[i] = { ...results[i], status: 'done', imageUrl: data.imageUrl };
+        if (isIdle && typeof data.imageUrl === 'string') {
+          canonicalBaseB64 = data.imageUrl.replace(DATA_URI_PREFIX_RE, '');
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Unknown error';
         results[i] = { ...results[i], status: 'error', error: msg };
