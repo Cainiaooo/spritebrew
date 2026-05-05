@@ -7,7 +7,7 @@
 
 import { useCallback, useState } from 'react';
 import Link from 'next/link';
-import { Loader2, Download, AlertCircle, AlertTriangle, Check } from 'lucide-react';
+import { Loader2, Download, AlertCircle, AlertTriangle, Check, RotateCw } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import HatchChecklist, {
@@ -122,6 +122,81 @@ export default function CodexPetPage() {
 
     setRunning(false);
   }, [description, running]);
+
+  const regenerateState = useCallback(
+    async (state: CodexPetState) => {
+      // Idle is the canonical base — regenerating it would invalidate every
+      // other state's identity lock. Restart the whole batch instead.
+      if (state === 'idle' || running) return;
+
+      const idle = progress.find((p) => p.state === 'idle');
+      if (!idle?.imageUrl || idle.status !== 'done') return;
+      const baseB64 = idle.imageUrl.replace(DATA_URI_PREFIX_RE, '');
+
+      const idx = progress.findIndex((p) => p.state === state);
+      if (idx < 0) return;
+      if (progress.some((p) => p.status === 'running')) return;
+
+      setHatched(false);
+      setProgress((prev) =>
+        prev.map((p, i) =>
+          i === idx
+            ? { ...p, status: 'running', error: undefined, warnings: undefined }
+            : p,
+        ),
+      );
+
+      const tmpl = CODEX_PET_TEMPLATE;
+      const prompt = [
+        tmpl.promptPrefix,
+        description.trim(),
+        STATE_PROMPT_SUFFIX[state],
+        IDENTITY_LOCK_SUFFIX,
+      ].join(', ');
+
+      try {
+        const data = await fetchGenerationSSE(
+          {
+            mode: 'create',
+            prompt,
+            promptStyle: 'character',
+            width: tmpl.size,
+            height: tmpl.size,
+            removeBg: true,
+            referenceImages: [baseB64],
+          },
+          null,
+        );
+
+        if (!data.success || !data.imageUrl) {
+          throw new Error(String(data.error ?? 'No image returned'));
+        }
+
+        const warnings = Array.isArray(data.qaWarnings)
+          ? (data.qaWarnings as QaWarning[])
+          : undefined;
+        setProgress((prev) =>
+          prev.map((p, i) =>
+            i === idx
+              ? {
+                  ...p,
+                  status: 'done',
+                  imageUrl: data.imageUrl,
+                  warnings,
+                  error: undefined,
+                }
+              : p,
+          ),
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Unknown error';
+        setProgress((prev) =>
+          prev.map((p, i) => (i === idx ? { ...p, status: 'error', error: msg } : p)),
+        );
+      }
+    },
+    [progress, description, running],
+  );
 
   const hatch = useCallback(async () => {
     const completed = progress.filter((p) => p.status === 'done' && p.imageUrl);
@@ -265,16 +340,31 @@ export default function CodexPetPage() {
                 key={p.state}
                 className="rounded-lg border border-border-subtle bg-bg-elevated p-3 space-y-2"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-1">
                   <span className="text-xs font-mono text-text-primary">{p.state}</span>
-                  {p.status === 'pending' && (
-                    <span className="text-[10px] font-mono text-text-muted">queued</span>
-                  )}
-                  {p.status === 'running' && (
-                    <Loader2 size={12} className="animate-spin text-accent-amber" />
-                  )}
-                  {p.status === 'done' && <Check size={12} className="text-green-400" />}
-                  {p.status === 'error' && <AlertCircle size={12} className="text-red-400" />}
+                  <div className="flex items-center gap-1.5">
+                    {p.status === 'pending' && (
+                      <span className="text-[10px] font-mono text-text-muted">queued</span>
+                    )}
+                    {p.status === 'running' && (
+                      <Loader2 size={12} className="animate-spin text-accent-amber" />
+                    )}
+                    {p.status === 'done' && <Check size={12} className="text-green-400" />}
+                    {p.status === 'error' && <AlertCircle size={12} className="text-red-400" />}
+                    {p.state !== 'idle'
+                      && (p.status === 'done' || p.status === 'error')
+                      && !running
+                      && progress.find((q) => q.state === 'idle')?.status === 'done'
+                      && !progress.some((q) => q.status === 'running') && (
+                      <button
+                        onClick={() => regenerateState(p.state)}
+                        title="Regenerate this state, keeping idle as the canonical base"
+                        className="p-0.5 rounded text-text-muted hover:text-accent-amber cursor-pointer transition-colors"
+                      >
+                        <RotateCw size={11} />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 {p.imageUrl ? (
                   <div
