@@ -36,10 +36,28 @@ export interface GenerationStyle {
   resolutionMode?: ResolutionMode;
 }
 
+// Shared "is NOT what" baseline. Models reach for painterly / 3D / glossy
+// renderings whenever the user description sounds elaborate; suppressing
+// those up front keeps the output legible as pixel art at the target size.
+// Per-style negatives layer on top of this with category-specific bans.
+const PIXEL_BASELINE_NEGATIVE =
+  'NOT painterly rendering, NOT 3D rendering, NOT anime key art, NOT glossy app-icon treatment, NOT realistic textures, NOT soft gradients, NOT high-detail antialiasing';
+
+const PIXEL_BASELINE_POSITIVE =
+  'pixel art, visible stepped pixel edges, limited palette, flat cel shading';
+
 export const GENERATION_STYLES: GenerationStyle[] = [
   {
     id: 'character', label: 'Character', description: 'Game character sprite, side or three-quarter view',
-    promptStyle: 'character', promptPrefix: 'pixel art game character, clean outlines, side view',
+    promptStyle: 'character',
+    promptPrefix: [
+      'pixel art game character, clean readable silhouette, side or three-quarter view',
+      'thick dark 1-2px outline, compact proportions',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no portrait crop or close-up, no environment scenery',
+      'no text labels, UI panels, speech bubbles, glow, halo, or floating symbols',
+    ].join(', '),
     tier: 'plus', category: 'characters',
     defaultWidth: 64, defaultHeight: 64, minSize: 16, maxSize: 256,
     fixedSize: false, isAnimation: false, paletteColors: 32,
@@ -47,7 +65,15 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'character-portrait', label: 'Character Portrait', description: 'Frontal portrait, dialog-style bust',
-    promptStyle: 'character_portrait', promptPrefix: 'pixel art character portrait, frontal view, expressive face',
+    promptStyle: 'character_portrait',
+    promptPrefix: [
+      'pixel art character portrait, frontal head-and-shoulders bust, expressive face',
+      'thick dark outline, simple readable features',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no full body, no legs, no environment or background scenery',
+      'no speech bubbles, no thought bubbles, no text labels, no UI frame',
+    ].join(', '),
     tier: 'plus', category: 'characters',
     defaultWidth: 64, defaultHeight: 64, minSize: 32, maxSize: 256,
     fixedSize: false, isAnimation: false, paletteColors: 32,
@@ -55,7 +81,15 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'character-pro', label: 'Character (High Detail)', description: 'Larger sprite with more shading detail',
-    promptStyle: 'character_pro', promptPrefix: 'detailed pixel art character, soft shading, modern style',
+    promptStyle: 'character_pro',
+    promptPrefix: [
+      'detailed pixel art character with multi-step cel shading',
+      'still pixel art — visible stepped edges, limited palette, hand-placed pixels',
+      'two to three shadow steps allowed, single highlight step allowed',
+      PIXEL_BASELINE_NEGATIVE,
+      'no environment scenery, no UI overlays, no text or labels',
+      'no glow, halo, aura, motion lines, or floating effects',
+    ].join(', '),
     tier: 'pro', category: 'characters',
     defaultWidth: 128, defaultHeight: 128, minSize: 64, maxSize: 256,
     fixedSize: false, isAnimation: false, paletteColors: 64,
@@ -63,7 +97,15 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'item', label: 'Item / Inventory', description: 'Single inventory item, transparent background',
-    promptStyle: 'item', promptPrefix: 'pixel art inventory item, top-down view, clean silhouette',
+    promptStyle: 'item',
+    promptPrefix: [
+      'pixel art inventory item, single object, three-quarter or top-down view',
+      'clean silhouette, thick dark outline, centered',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no character holding the item, no hands, no environment',
+      'no shadow ground patch, no glow, no sparkles, no rarity beams, no text labels',
+    ].join(', '),
     tier: 'plus', category: 'items',
     defaultWidth: 64, defaultHeight: 64, minSize: 16, maxSize: 128,
     fixedSize: false, isAnimation: false, paletteColors: 24,
@@ -71,7 +113,16 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'tile', label: 'Tile', description: 'Tileable terrain or environment tile',
-    promptStyle: 'tile', promptPrefix: 'pixel art tileable texture tile, seamless edges',
+    promptStyle: 'tile',
+    promptPrefix: [
+      'pixel art tileable texture tile, seamless edges that match the opposite edge',
+      'fills the entire canvas edge-to-edge with no margin',
+      'uniform texture density across the tile, no focal subject',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no characters, no creatures, no inventory items, no UI overlays',
+      'no visible tile borders, no grid lines, no edge frames, no text',
+    ].join(', '),
     tier: 'plus', category: 'tiles',
     defaultWidth: 32, defaultHeight: 32, minSize: 16, maxSize: 128,
     fixedSize: false, isAnimation: false, paletteColors: 16,
@@ -79,7 +130,15 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'environment', label: 'Environment', description: 'Background scene or environment',
-    promptStyle: 'environment', promptPrefix: 'pixel art environment, atmospheric background',
+    promptStyle: 'environment',
+    promptPrefix: [
+      'pixel art environment background, atmospheric scene, multiple depth layers',
+      'clear horizon, readable foreground / midground / background separation',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no character or creature subject, no inventory items',
+      'no UI overlays, no minimap, no text labels, no isometric grid lines',
+    ].join(', '),
     tier: 'pro', category: 'environments',
     defaultWidth: 256, defaultHeight: 128, minSize: 96, maxSize: 256,
     fixedSize: false, isAnimation: false, paletteColors: 64,
@@ -87,7 +146,16 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'icon', label: 'Skill / UI Icon', description: 'Square ability or UI icon',
-    promptStyle: 'icon', promptPrefix: 'pixel art skill icon, bold silhouette, centered',
+    promptStyle: 'icon',
+    promptPrefix: [
+      'pixel art skill icon, bold centered silhouette, readable at small sizes',
+      'high-contrast color blocking, single focal subject',
+      'thick dark 1-2px outline framing the subject',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no full character body, no environment, no scenery',
+      'no text, no numbers, no decorative borders or frame',
+    ].join(', '),
     tier: 'fast', category: 'ui',
     defaultWidth: 64, defaultHeight: 64, minSize: 16, maxSize: 128,
     fixedSize: false, isAnimation: false, paletteColors: 16,
@@ -95,7 +163,17 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'animation-walk', label: 'Walk Cycle', description: 'Side-on walking animation, 6-frame sheet',
-    promptStyle: 'animation__walk', promptPrefix: 'pixel art character walk cycle, side view, 6-frame sprite sheet, horizontal layout',
+    promptStyle: 'animation__walk',
+    promptPrefix: [
+      'pixel art character walk cycle, side view, 6-frame sprite sheet, horizontal layout',
+      'every cell identical size, character centered in each cell at the same scale',
+      'frame order is reading order left-to-right, smooth gait progression',
+      PIXEL_BASELINE_POSITIVE,
+      PIXEL_BASELINE_NEGATIVE,
+      'no speed lines, motion arcs, dust clouds, afterimages, or smears',
+      'no cast shadows, drop shadows, oval floor shadows, glow, or halo',
+      'no visible cell borders, no gridlines between frames, no frame numbers or labels',
+    ].join(', '),
     tier: 'animation', category: 'animations',
     defaultWidth: 64, defaultHeight: 64, minSize: 32, maxSize: 96,
     fixedSize: true, isAnimation: true, paletteColors: 32,
