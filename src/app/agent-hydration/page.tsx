@@ -5,6 +5,10 @@ import Link from 'next/link';
 import { Loader2, Download, AlertCircle, AlertTriangle, Check } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import HatchChecklist, {
+  type HatchStep,
+  type HatchStepStatus,
+} from '@/components/sprites/HatchChecklist';
 import { downloadAsZip } from '@/lib/downloadUtils';
 import { fetchGenerationSSE } from '@/lib/sseClient';
 import {
@@ -36,6 +40,8 @@ export default function AgentHydrationPage() {
   const [description, setDescription] = useState('');
   const [agentType, setAgentType] = useState<AgentHydrationAgentType>('claude-code');
   const [running, setRunning] = useState(false);
+  const [packing, setPacking] = useState(false);
+  const [packed, setPacked] = useState(false);
   const [progress, setProgress] = useState<StateProgress[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,6 +50,7 @@ export default function AgentHydrationPage() {
 
     setError(null);
     setRunning(true);
+    setPacked(false);
 
     const initial: StateProgress[] = AGENT_HYDRATION_STATES.map((s) => ({
       state: s,
@@ -192,11 +199,26 @@ export default function AgentHydrationPage() {
     ].join('\n');
     files.push({ name: 'README.md', data: readme });
 
-    await downloadAsZip(files, `agent-hydration_${agentType}.zip`);
+    setPacking(true);
+    try {
+      await downloadAsZip(files, `agent-hydration_${agentType}.zip`);
+      setPacked(true);
+    } finally {
+      setPacking(false);
+    }
   }, [progress, agentType, description]);
 
   const completedCount = progress.filter((p) => p.status === 'done').length;
   const allDone = progress.length > 0 && completedCount === progress.length;
+
+  const checklistSteps = deriveAgentHydrationSteps({
+    description,
+    agentType,
+    progress,
+    allDone,
+    packing,
+    packed,
+  });
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -266,6 +288,10 @@ export default function AgentHydrationPage() {
         </div>
       </Card>
 
+      {description.trim() && (
+        <HatchChecklist steps={checklistSteps} />
+      )}
+
       {progress.length > 0 && (
         <div className="rounded-lg border border-border-default bg-bg-surface p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -333,9 +359,18 @@ export default function AgentHydrationPage() {
 
           {allDone && (
             <div className="flex justify-end">
-              <Button size="md" onClick={downloadZip}>
-                <Download size={14} />
-                Download zip
+              <Button size="md" onClick={downloadZip} disabled={packing}>
+                {packing ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Packing...
+                  </>
+                ) : (
+                  <>
+                    <Download size={14} />
+                    Download zip
+                  </>
+                )}
               </Button>
             </div>
           )}
@@ -360,4 +395,96 @@ export default function AgentHydrationPage() {
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   const res = await fetch(dataUrl);
   return res.blob();
+}
+
+function deriveAgentHydrationSteps(args: {
+  description: string;
+  agentType: AgentHydrationAgentType;
+  progress: StateProgress[];
+  allDone: boolean;
+  packing: boolean;
+  packed: boolean;
+}): HatchStep[] {
+  const { description, agentType, progress, allDone, packing, packed } = args;
+  const display = description.trim() ? `your ${agentType} agent` : 'your agent';
+
+  const idle = progress.find((p) => p.state === 'idle');
+  const idleStatus = idle?.status;
+  const idleDone = idleStatus === 'done';
+  const others = progress.filter((p) => p.state !== 'idle');
+  const othersTotal = others.length;
+  const othersDone = others.filter((p) => p.status === 'done').length;
+  const othersFailed = others.filter((p) => p.status === 'error').length;
+  const othersAllDone = othersTotal > 0 && othersDone === othersTotal;
+  const othersRemaining = others.some(
+    (p) => p.status === 'pending' || p.status === 'running',
+  );
+
+  let posesStatus: HatchStepStatus;
+  if (!idleDone) posesStatus = 'pending';
+  else if (othersAllDone) posesStatus = 'done';
+  else if (othersRemaining) posesStatus = 'active';
+  else posesStatus = 'failed';
+
+  return [
+    {
+      title: `Get ${display} ready`,
+      description: 'Confirm description and agent type, then start the run.',
+      status: !description.trim()
+        ? 'pending'
+        : progress.length === 0
+        ? 'active'
+        : 'done',
+    },
+    {
+      title: `Imagine ${display}'s main look`,
+      description:
+        'Generate the idle base sprite — anchors identity for the other 6 states.',
+      status:
+        progress.length === 0
+          ? 'pending'
+          : idleStatus === 'running'
+          ? 'active'
+          : idleStatus === 'error'
+          ? 'failed'
+          : idleDone
+          ? 'done'
+          : 'pending',
+      error: idleStatus === 'error' ? idle?.error : undefined,
+    },
+    {
+      title: `Picture ${display}'s states`,
+      description:
+        'Generate the 6 remaining hydration states with the idle frame as a reference.',
+      status: posesStatus,
+      detail:
+        posesStatus === 'active'
+          ? `${othersDone} of ${othersTotal} done${
+              othersFailed > 0 ? `, ${othersFailed} failed` : ''
+            }`
+          : undefined,
+      error:
+        posesStatus === 'failed'
+          ? `${othersFailed} of ${othersTotal} states failed — re-run to retry`
+          : undefined,
+    },
+    {
+      title: `Pack the bundle`,
+      description: 'Bundle all 7 sprites + Aseprite JSON + manifest into a zip.',
+      status: !allDone
+        ? 'pending'
+        : packed
+        ? 'done'
+        : packing
+        ? 'active'
+        : 'active',
+      detail: !allDone
+        ? undefined
+        : packed
+        ? undefined
+        : packing
+        ? 'building zip…'
+        : 'ready — click Download',
+    },
+  ];
 }

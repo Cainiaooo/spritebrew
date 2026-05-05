@@ -10,6 +10,10 @@ import Link from 'next/link';
 import { Loader2, Download, AlertCircle, AlertTriangle, Check } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
+import HatchChecklist, {
+  type HatchStep,
+  type HatchStepStatus,
+} from '@/components/sprites/HatchChecklist';
 import { downloadAsZip } from '@/lib/downloadUtils';
 import { fetchGenerationSSE } from '@/lib/sseClient';
 import {
@@ -40,6 +44,7 @@ export default function CodexPetPage() {
   const [description, setDescription] = useState('');
   const [running, setRunning] = useState(false);
   const [hatching, setHatching] = useState(false);
+  const [hatched, setHatched] = useState(false);
   const [progress, setProgress] = useState<StateProgress[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +53,7 @@ export default function CodexPetPage() {
 
     setError(null);
     setRunning(true);
+    setHatched(false);
 
     const initial: StateProgress[] = CODEX_PET_STATES.map((s) => ({
       state: s,
@@ -161,6 +167,7 @@ export default function CodexPetPage() {
         ],
         `codex-pet_${slug}.zip`,
       );
+      setHatched(true);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Hatch failed';
       setError(msg);
@@ -171,6 +178,15 @@ export default function CodexPetPage() {
 
   const completedCount = progress.filter((p) => p.status === 'done').length;
   const allDone = progress.length > 0 && completedCount === progress.length;
+
+  const checklistSteps = deriveCodexPetSteps({
+    description,
+    petName,
+    progress,
+    allDone,
+    hatching,
+    hatched,
+  });
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -236,6 +252,10 @@ export default function CodexPetPage() {
           </Button>
         </div>
       </Card>
+
+      {description.trim() && (
+        <HatchChecklist steps={checklistSteps} />
+      )}
 
       {progress.length > 0 && (
         <div className="rounded-lg border border-border-default bg-bg-surface p-6 space-y-4">
@@ -330,6 +350,104 @@ export default function CodexPetPage() {
       </p>
     </div>
   );
+}
+
+function deriveCodexPetSteps(args: {
+  description: string;
+  petName: string;
+  progress: StateProgress[];
+  allDone: boolean;
+  hatching: boolean;
+  hatched: boolean;
+}): HatchStep[] {
+  const { description, petName, progress, allDone, hatching, hatched } = args;
+  const display =
+    petName.trim() ||
+    description.trim().split(/\s+/).slice(0, 2).join(' ') ||
+    'your pet';
+
+  const idle = progress.find((p) => p.state === 'idle');
+  const idleStatus = idle?.status;
+  const idleDone = idleStatus === 'done';
+  const others = progress.filter((p) => p.state !== 'idle');
+  const othersTotal = others.length;
+  const othersDone = others.filter((p) => p.status === 'done').length;
+  const othersFailed = others.filter((p) => p.status === 'error').length;
+  const othersAllDone = othersTotal > 0 && othersDone === othersTotal;
+  const othersRemaining = others.some(
+    (p) => p.status === 'pending' || p.status === 'running',
+  );
+
+  // Step 3: only flips to "failed" once every other state has been attempted
+  // (no pending or running left) and at least one ended in error.
+  let posesStatus: HatchStepStatus;
+  if (!idleDone) posesStatus = 'pending';
+  else if (othersAllDone) posesStatus = 'done';
+  else if (othersRemaining) posesStatus = 'active';
+  else posesStatus = 'failed';
+
+  return [
+    {
+      title: `Get ${display} ready`,
+      description: 'Confirm the pet description and start the run.',
+      status: !description.trim()
+        ? 'pending'
+        : progress.length === 0
+        ? 'active'
+        : 'done',
+    },
+    {
+      title: `Imagine ${display}'s main look`,
+      description:
+        'Generate the idle base sprite — anchors identity for the other 8 states.',
+      status:
+        progress.length === 0
+          ? 'pending'
+          : idleStatus === 'running'
+          ? 'active'
+          : idleStatus === 'error'
+          ? 'failed'
+          : idleDone
+          ? 'done'
+          : 'pending',
+      error: idleStatus === 'error' ? idle?.error : undefined,
+    },
+    {
+      title: `Picture ${display}'s poses`,
+      description:
+        'Generate the 8 remaining Codex states with the idle frame as a reference.',
+      status: posesStatus,
+      detail:
+        posesStatus === 'active'
+          ? `${othersDone} of ${othersTotal} done${
+              othersFailed > 0 ? `, ${othersFailed} failed` : ''
+            }`
+          : undefined,
+      error:
+        posesStatus === 'failed'
+          ? `${othersFailed} of ${othersTotal} states failed — re-run to retry`
+          : undefined,
+    },
+    {
+      title: `Hatch ${display}`,
+      description:
+        'Compose the 1536×1872 atlas, encode lossless WebP, and download the bundle.',
+      status: !allDone
+        ? 'pending'
+        : hatched
+        ? 'done'
+        : hatching
+        ? 'active'
+        : 'active',
+      detail: !allDone
+        ? undefined
+        : hatched
+        ? undefined
+        : hatching
+        ? 'building bundle…'
+        : 'ready — click Hatch',
+    },
+  ];
 }
 
 function codexInstallReadme(slug: string, displayName: string, description: string): string {
