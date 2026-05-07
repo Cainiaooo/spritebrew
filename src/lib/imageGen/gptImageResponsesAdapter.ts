@@ -27,6 +27,10 @@ import type {
   ImageGenAdapter,
 } from './types';
 import { fetchWithRetry } from './retry';
+import {
+  extractImageBase64,
+  parseMaybeJson,
+} from './responseImage';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com';
 const DEFAULT_MODEL_PREFIX = 'gpt-image';
@@ -125,19 +129,6 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
   }
 }
 
-// Walk the streamed JSON looking for image base64 in any of the known
-// field names. Different relays put the image in different places
-// (`partial_image_b64`, `b64_json`, `image_b64`, etc.) but they all
-// share the convention of using one of those keys at SOME nesting depth.
-// We accept any of them and prefer the longest (= final/largest image).
-const IMAGE_KEY_NAMES = new Set([
-  'partial_image_b64',
-  'b64_json',
-  'image_b64',
-  'image_base64',
-  'b64',
-]);
-
 async function consumeResponsesStream(
   body: ReadableStream<Uint8Array>,
 ): Promise<string | null> {
@@ -155,53 +146,14 @@ async function consumeResponsesStream(
     buffer = events.pop() ?? '';
 
     for (const event of events) {
-      const dataLines = event
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trim());
-      if (dataLines.length === 0) continue;
-      const raw = dataLines.join('');
-      if (!raw || raw === '[DONE]') continue;
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-
-      const candidate = extractImageB64(parsed);
-      if (candidate && (!bestImage || candidate.length > bestImage.length)) {
-        bestImage = candidate;
-      }
+      bestImage = pickBestImage(bestImage, extractImageFromSseEvent(event));
     }
   }
 
-  return bestImage;
-}
+  bestImage = pickBestImage(bestImage, extractImageFromSseEvent(buffer));
+  bestImage = pickBestImage(bestImage, extractImageBase64(parseMaybeJson(buffer)));
 
-function extractImageB64(obj: unknown): string | null {
-  let best: string | null = null;
-  const visit = (v: unknown, key?: string) => {
-    if (typeof v === 'string') {
-      if (key && IMAGE_KEY_NAMES.has(key) && v.length > 100) {
-        const cleaned = v.replace(/\s/g, '');
-        if (!best || cleaned.length > best.length) best = cleaned;
-      }
-      return;
-    }
-    if (Array.isArray(v)) {
-      for (const item of v) visit(item);
-      return;
-    }
-    if (v !== null && typeof v === 'object') {
-      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        visit(val, k);
-      }
-    }
-  };
-  visit(obj);
-  return best;
+  return bestImage;
 }
 
 // Closest preset size for the requested aspect ratio. Matches the
@@ -221,4 +173,26 @@ function ensureDataUri(b64OrUri: string): string {
 
 function trimSlash(s: string): string {
   return s.replace(/\/+$/, '');
+}
+
+function extractImageFromSseEvent(event: string): string | null {
+  const dataLines = event
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim());
+  if (dataLines.length === 0) {
+    return extractImageBase64(parseMaybeJson(event));
+  }
+
+  let best: string | null = null;
+  for (const line of dataLines) {
+    if (!line || line === '[DONE]') continue;
+    best = pickBestImage(best, extractImageBase64(parseMaybeJson(line)));
+  }
+  return best;
+}
+
+function pickBestImage(current: string | null, next: string | null): string | null {
+  if (!next) return current;
+  return !current || next.length > current.length ? next : current;
 }

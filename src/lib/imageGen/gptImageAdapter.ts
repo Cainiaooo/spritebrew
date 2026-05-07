@@ -20,6 +20,12 @@ import type {
   ImageGenAdapter,
 } from './types';
 import { fetchWithRetry } from './retry';
+import {
+  extractImageBase64,
+  extractImageUrl,
+  parseMaybeJson,
+  summarizeResponseShape,
+} from './responseImage';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com';
 const DEFAULT_MODEL = 'gpt-image-2';
@@ -95,11 +101,13 @@ export class GptImageAdapter implements ImageGenAdapter {
       throw new Error(`OpenAI images.generate ${res.status}: ${text.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as {
-      data?: Array<{ b64_json?: string }>;
-    };
-    const b64 = json.data?.[0]?.b64_json;
-    if (!b64) throw new Error('OpenAI returned no image data.');
+    const payload = await readResponsePayload(res);
+    const b64 = await resolveImageBase64(payload, this.apiKey);
+    if (!b64) {
+      throw new Error(
+        `OpenAI returned no image data. Response shape: ${summarizeResponseShape(payload)}.`,
+      );
+    }
 
     const [w, h] = sizeStr.split('x').map(Number);
     return { rawBase64Image: b64, rawWidth: w, rawHeight: h };
@@ -135,11 +143,13 @@ export class GptImageAdapter implements ImageGenAdapter {
       throw new Error(`OpenAI images.edit ${res.status}: ${text.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as {
-      data?: Array<{ b64_json?: string }>;
-    };
-    const b64 = json.data?.[0]?.b64_json;
-    if (!b64) throw new Error('OpenAI edit returned no image data.');
+    const payload = await readResponsePayload(res);
+    const b64 = await resolveImageBase64(payload, this.apiKey);
+    if (!b64) {
+      throw new Error(
+        `OpenAI edit returned no image data. Response shape: ${summarizeResponseShape(payload)}.`,
+      );
+    }
 
     const [w, h] = sizeStr.split('x').map(Number);
     return { rawBase64Image: b64, rawWidth: w, rawHeight: h };
@@ -159,4 +169,32 @@ function pickSize(w: number, h: number): string {
 
 function trimSlash(s: string): string {
   return s.replace(/\/+$/, '');
+}
+
+async function readResponsePayload(res: Response): Promise<unknown> {
+  const text = await res.text();
+  return parseMaybeJson(text);
+}
+
+async function resolveImageBase64(
+  payload: unknown,
+  apiKey: string,
+): Promise<string | null> {
+  const embedded = extractImageBase64(payload);
+  if (embedded) return embedded;
+
+  const url = extractImageUrl(payload);
+  if (!url) return null;
+
+  let res = await fetchWithRetry(url, {});
+  if (res.status === 401 || res.status === 403) {
+    res = await fetchWithRetry(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+  }
+  if (!res.ok) {
+    throw new Error(`OpenAI image URL fetch ${res.status}.`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.toString('base64');
 }
