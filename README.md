@@ -114,14 +114,14 @@ OPENAI_BASE_URL=https://api.openai.com    # default; relay: https://your-relay.c
 OPENAI_API_KEY=sk-...
 OPENAI_IMAGE_MODEL=gpt-image-2            # default
 
-# ── GPT Image via Responses API (relay-only mode, e.g. co.yes.vg) ──
+# ── GPT Image via Responses API (relay-only mode) ──
 # Some relays only expose /v1/responses (not /v1/images/generations).
 # They also encode the output size into the model name suffix
 # (gpt-image-1024x1536). Use this provider for those:
 #
 # IMAGE_GEN_API_PROVIDER=gpt-image-responses
-# OPENAI_BASE_URL=https://co.yes.vg
-# OPENAI_API_KEY=team-xxxx
+# OPENAI_BASE_URL=https://your-relay.example
+# OPENAI_API_KEY=<relay-token>
 # OPENAI_IMAGE_MODEL=gpt-image            # prefix only — adapter appends size
 
 # ── Gemini Nano Banana 2 ──

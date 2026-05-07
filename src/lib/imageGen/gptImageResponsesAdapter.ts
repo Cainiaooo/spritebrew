@@ -1,12 +1,12 @@
 // OpenAI Responses-API adapter for relay stations that route image
 // generation through `/v1/responses` instead of `/v1/images/generations`.
 //
-// Some Chinese-region relay providers (co.yes.vg, similar) only expose
-// the unified Responses API and encode the output size in the model name
-// (`gpt-image-1024x1536`). Their request shape is the OpenAI Responses
-// API: `{model, input: [{type:'message', role:'user', content:[…]}],
-// stream: true, store: false}`, and the image arrives streamed in SSE
-// events (typically `response.image_generation_call.partial_image` /
+// Some relay providers only expose the unified Responses API and encode
+// the output size in the model name (`gpt-image-1024x1536`). Their request
+// shape is the OpenAI Responses API:
+// `{model, input: [{type:'message', role:'user', content:[…]}], stream: true,
+// store: false}`, and the image arrives streamed in SSE events (typically
+// `response.image_generation_call.partial_image` /
 // `response.image_generation_call.completed`).
 //
 // generate() and editWithReference() both go through one POST to
@@ -14,8 +14,8 @@
 // blocks alongside the prompt text.
 //
 // Configurable via env (reuses the existing OPENAI_* vars):
-//   OPENAI_BASE_URL      e.g. https://co.yes.vg
-//   OPENAI_API_KEY       e.g. team-xxxx (relay token)
+//   OPENAI_BASE_URL      relay base URL
+//   OPENAI_API_KEY       relay token
 //   OPENAI_IMAGE_MODEL   model prefix; default 'gpt-image' (size suffix
 //                        is appended automatically: gpt-image-1024x1024,
 //                        gpt-image-1536x1024, gpt-image-1024x1536)

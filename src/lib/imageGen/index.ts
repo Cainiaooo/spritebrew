@@ -3,7 +3,7 @@
 // Provider is chosen at runtime via IMAGE_GEN_API_PROVIDER:
 //   gpt-image           → GptImageAdapter (POST /v1/images/generations)
 //   gpt-image-responses → GptImageResponsesAdapter (POST /v1/responses,
-//                         streaming, for relays like co.yes.vg that only
+//                         streaming, for relays that only
 //                         expose the unified Responses API)
 //   gemini              → GeminiAdapter
 //
