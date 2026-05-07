@@ -6,13 +6,17 @@ export interface GenerateRequest {
   width: number;
   height: number;
   referenceImages?: string[];
+  onPartialImage?: PartialImageHandler;
 }
 
 export interface EditRequest {
   referenceImage: string;
   prompt: string;
   canvasSize?: { w: number; h: number };
+  onPartialImage?: PartialImageHandler;
 }
+
+export type PartialImageHandler = (rawBase64Image: string) => void | Promise<void>;
 
 export interface GenResult {
   rawBase64Image: string;

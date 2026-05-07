@@ -20,6 +20,7 @@ import {
   applyOutfitToSheet,
 } from '@/lib/parts/compositor';
 import { PARTS, type Outfit, type PartCategory } from '@/lib/parts/catalog';
+import type { PartialImageHandler } from '@/lib/imageGen/types';
 
 // ── Constants ──
 
@@ -96,7 +97,15 @@ export async function POST(request: Request) {
     const heartbeat = startHeartbeat(writer);
     try {
       await writer.write(sseEvent({ type: 'status', message: 'Starting generation...' }));
-      const result = mode === 'animate' ? await runAnimate(body) : await runCreate(body);
+      const onPartialImage: PartialImageHandler = async (rawBase64Image) => {
+        await writer.write(sseEvent({
+          type: 'partial',
+          imageUrl: `data:image/png;base64,${rawBase64Image}`,
+        }));
+      };
+      const result = mode === 'animate'
+        ? await runAnimate(body, onPartialImage)
+        : await runCreate(body, onPartialImage);
       await writer.write(sseEvent({ type: 'result', data: result }));
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Unknown error';
@@ -199,7 +208,10 @@ function validateOutfit(outfit: Outfit): string | null {
 
 // ── Runners ──
 
-async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
+async function runCreate(
+  body: GenerateBody,
+  onPartialImage?: PartialImageHandler,
+): Promise<Record<string, unknown>> {
   const w = body.width ?? 64;
   const h = body.height ?? 64;
   const styleKey = body.promptStyle ?? body.style;
@@ -215,6 +227,7 @@ async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
     width: w,
     height: h,
     referenceImages: body.referenceImages,
+    onPartialImage,
   });
 
   let processed = await postProcessSprite(raw.rawBase64Image, {
@@ -238,7 +251,10 @@ async function runCreate(body: GenerateBody): Promise<Record<string, unknown>> {
   };
 }
 
-async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> {
+async function runAnimate(
+  body: GenerateBody,
+  onPartialImage?: PartialImageHandler,
+): Promise<Record<string, unknown>> {
   const frameCount = body.framesDuration && VALID_FRAME_DURATIONS.includes(body.framesDuration)
     ? body.framesDuration
     : 6;
@@ -263,6 +279,7 @@ async function runAnimate(body: GenerateBody): Promise<Record<string, unknown>> 
     referenceImage: referenceB64,
     prompt,
     canvasSize: { w: layout.canvasW, h: layout.canvasH },
+    onPartialImage,
   });
 
   const frames = await detectAndSliceFrames(

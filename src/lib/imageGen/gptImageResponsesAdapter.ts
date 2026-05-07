@@ -19,12 +19,17 @@
 //   OPENAI_IMAGE_MODEL   model prefix; default 'gpt-image' (size suffix
 //                        is appended automatically: gpt-image-1024x1024,
 //                        gpt-image-1536x1024, gpt-image-1024x1536)
+//   OPENAI_RESPONSES_IMAGE_MODE
+//                        'model-size' default, or 'image-tool' for relays that
+//                        follow the Responses `tools: [{type:'image_generation'}]`
+//                        request shape.
 
 import type {
   EditRequest,
   GenResult,
   GenerateRequest,
   ImageGenAdapter,
+  PartialImageHandler,
 } from './types';
 import { fetchWithRetry } from './retry';
 import {
@@ -39,6 +44,8 @@ export interface GptImageResponsesAdapterOptions {
   apiKey?: string;
   baseUrl?: string;
   modelPrefix?: string;
+  requestMode?: 'model-size' | 'image-tool';
+  quality?: 'low' | 'medium' | 'high' | 'auto';
 }
 
 interface ResponsesContentBlock {
@@ -51,6 +58,8 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly modelPrefix: string;
+  private readonly requestMode: 'model-size' | 'image-tool';
+  private readonly quality: 'low' | 'medium' | 'high' | 'auto';
 
   constructor(opts: GptImageResponsesAdapterOptions = {}) {
     const key = opts.apiKey ?? process.env.OPENAI_API_KEY;
@@ -61,6 +70,8 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
     );
     this.modelPrefix =
       opts.modelPrefix ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_MODEL_PREFIX;
+    this.requestMode = pickRequestMode(opts.requestMode);
+    this.quality = opts.quality ?? pickQuality(process.env.OPENAI_IMAGE_QUALITY) ?? 'auto';
   }
 
   private get url(): string {
@@ -77,7 +88,8 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
         content.push({ type: 'input_image', image_url: ensureDataUri(img) });
       }
     }
-    return this.callResponses(size, content);
+    const textOnlyInput = req.referenceImages?.length ? null : req.prompt;
+    return this.callResponses(size, content, textOnlyInput, req.onPartialImage);
   }
 
   async editWithReference(req: EditRequest): Promise<GenResult> {
@@ -87,20 +99,26 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
       { type: 'input_text', text: req.prompt },
       { type: 'input_image', image_url: ensureDataUri(req.referenceImage) },
     ];
-    return this.callResponses(size, content);
+    return this.callResponses(size, content, null, req.onPartialImage);
   }
 
   private async callResponses(
     size: string,
     content: ResponsesContentBlock[],
+    textOnlyInput: string | null,
+    onPartialImage?: PartialImageHandler,
   ): Promise<GenResult> {
-    const model = `${this.modelPrefix}-${size}`;
-    const body = {
-      model,
-      input: [{ type: 'message', role: 'user', content }],
-      stream: true,
-      store: false,
-    };
+    const model =
+      this.requestMode === 'model-size' ? `${this.modelPrefix}-${size}` : this.modelPrefix;
+    const body =
+      this.requestMode === 'image-tool'
+        ? buildImageToolBody(model, size, content, textOnlyInput, this.quality)
+        : {
+            model,
+            input: [{ type: 'message', role: 'user', content }],
+            stream: true,
+            store: false,
+          };
 
     const res = await fetchWithRetry(this.url, {
       method: 'POST',
@@ -120,7 +138,7 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
       throw new Error('OpenAI responses returned no body.');
     }
 
-    const b64 = await consumeResponsesStream(res.body);
+    const b64 = await consumeResponsesStream(res.body, onPartialImage);
     if (!b64) {
       throw new Error('OpenAI responses stream ended without an image.');
     }
@@ -131,6 +149,7 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
 
 async function consumeResponsesStream(
   body: ReadableStream<Uint8Array>,
+  onPartialImage?: PartialImageHandler,
 ): Promise<string | null> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -146,12 +165,20 @@ async function consumeResponsesStream(
     buffer = events.pop() ?? '';
 
     for (const event of events) {
-      bestImage = pickBestImage(bestImage, extractImageFromSseEvent(event));
+      const candidate = extractImageFromSseEvent(event);
+      if (candidate && candidate !== bestImage) {
+        await onPartialImage?.(candidate);
+      }
+      bestImage = pickBestImage(bestImage, candidate);
     }
   }
 
-  bestImage = pickBestImage(bestImage, extractImageFromSseEvent(buffer));
-  bestImage = pickBestImage(bestImage, extractImageBase64(parseMaybeJson(buffer)));
+  const tailCandidate =
+    extractImageFromSseEvent(buffer) ?? extractImageBase64(parseMaybeJson(buffer));
+  if (tailCandidate && tailCandidate !== bestImage) {
+    await onPartialImage?.(tailCandidate);
+  }
+  bestImage = pickBestImage(bestImage, tailCandidate);
 
   return bestImage;
 }
@@ -173,6 +200,45 @@ function ensureDataUri(b64OrUri: string): string {
 
 function trimSlash(s: string): string {
   return s.replace(/\/+$/, '');
+}
+
+function buildImageToolBody(
+  model: string,
+  size: string,
+  content: ResponsesContentBlock[],
+  textOnlyInput: string | null,
+  quality: 'low' | 'medium' | 'high' | 'auto',
+): Record<string, unknown> {
+  const tool: Record<string, unknown> = {
+    type: 'image_generation',
+    quality,
+    output_format: 'png',
+  };
+  if (size !== 'auto') {
+    tool.size = size;
+  }
+
+  return {
+    model,
+    input: textOnlyInput ?? [{ role: 'user', content }],
+    tools: [tool],
+    stream: true,
+    store: false,
+  };
+}
+
+function pickRequestMode(
+  override?: 'model-size' | 'image-tool',
+): 'model-size' | 'image-tool' {
+  if (override) return override;
+  const raw = process.env.OPENAI_RESPONSES_IMAGE_MODE?.trim();
+  return raw === 'image-tool' ? 'image-tool' : 'model-size';
+}
+
+function pickQuality(value: string | undefined): 'low' | 'medium' | 'high' | 'auto' | null {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'auto'
+    ? value
+    : null;
 }
 
 function extractImageFromSseEvent(event: string): string | null {

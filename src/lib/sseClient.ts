@@ -20,19 +20,29 @@ export interface GenerationSSEResult {
   [key: string]: unknown;
 }
 
+export interface GenerationSSEOptions {
+  authToken?: string | null;
+  onStatus?: (message: string) => void;
+  onPartialImage?: (imageUrl: string) => void;
+}
+
 /**
  * POST to the generate endpoint, consume the SSE stream, and return the
  * generation result. Throws on HTTP errors, stream errors, and API errors.
  */
 export async function fetchGenerationSSE(
   payload: Record<string, unknown>,
-  authToken: string | null
+  authTokenOrOptions: string | null | GenerationSSEOptions
 ): Promise<GenerationSSEResult> {
+  const options =
+    typeof authTokenOrOptions === 'object' && authTokenOrOptions !== null
+      ? authTokenOrOptions
+      : { authToken: authTokenOrOptions };
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
+  if (options.authToken) {
+    headers.Authorization = `Bearer ${options.authToken}`;
   }
 
   const res = await fetch('/api/generate', {
@@ -97,8 +107,11 @@ export async function fetchGenerationSSE(
           result = parsed.data as GenerationSSEResult;
         } else if (parsed.type === 'error') {
           throw new Error(parsed.message || 'Generation failed.');
+        } else if (parsed.type === 'status' && parsed.message) {
+          options.onStatus?.(String(parsed.message));
+        } else if (parsed.type === 'partial' && parsed.imageUrl) {
+          options.onPartialImage?.(String(parsed.imageUrl));
         }
-        // 'status' type is informational — ignore
       } catch (e) {
         if (e instanceof SyntaxError) continue; // malformed JSON, skip
         throw e;

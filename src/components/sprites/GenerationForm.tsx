@@ -114,7 +114,12 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
       }
 
       const { fetchGenerationSSE } = await import('@/lib/sseClient');
-      const data = await fetchGenerationSSE(body, null);
+      const data = await fetchGenerationSSE(body, {
+        authToken: null,
+        onPartialImage: (imageUrl) => {
+          setGeneratedImage(imageUrl, imageUrl);
+        },
+      });
 
       if (!data.success) {
         setGenerationError(String(data.error ?? 'Generation failed — try a different prompt.'));

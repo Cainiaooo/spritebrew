@@ -232,7 +232,12 @@ export default function AnimateForm({ onGenerated }: AnimateFormProps) {
       }
 
       const { fetchGenerationSSE } = await import('@/lib/sseClient');
-      const data = await fetchGenerationSSE(body, null);
+      const data = await fetchGenerationSSE(body, {
+        authToken: null,
+        onPartialImage: (imageUrl) => {
+          setGeneratedImage(imageUrl, imageUrl);
+        },
+      });
 
       if (!data.success) {
         setGenerationError(String(data.error ?? 'Animation failed — try again.'));
