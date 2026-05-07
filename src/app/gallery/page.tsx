@@ -1,16 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Download, Scissors, Trash2, Images, Sparkles, Play } from 'lucide-react';
 import {
-  loadHistory,
   deleteHistoryEntry,
   clearHistory,
+  useGenerationHistory,
   relativeTime,
   type GenerationHistoryEntry,
-  type GenerationMode,
 } from '@/lib/generationHistory';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
@@ -26,12 +25,8 @@ export default function GalleryPage() {
   const setGenerationStyle = useSpriteStore((s) => s.setGenerationStyle);
   const setCurrentSheetMetadata = useSpriteStore((s) => s.setCurrentSheetMetadata);
 
-  const [entries, setEntries] = useState<GenerationHistoryEntry[]>([]);
+  const entries = useGenerationHistory(userId);
   const [filter, setFilter] = useState<FilterTab>('all');
-
-  useEffect(() => {
-    setEntries(loadHistory(userId));
-  }, [userId]);
 
   const counts = useMemo(
     () => ({
@@ -72,14 +67,12 @@ export default function GalleryPage() {
   const handleDelete = useCallback((id: string) => {
     if (!confirm('Delete this generation? This cannot be undone.')) return;
     deleteHistoryEntry(userId, id);
-    setEntries(loadHistory(userId));
-  }, [userId]);
+  }, []);
 
   const handleClearAll = useCallback(() => {
     if (!confirm('Clear all generation history? This cannot be undone.')) return;
     clearHistory(userId);
-    setEntries([]);
-  }, [userId]);
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">

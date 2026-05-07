@@ -1,3 +1,5 @@
+import { useMemo, useSyncExternalStore } from 'react';
+
 /**
  * Generation history — stored in localStorage.
  *
@@ -30,17 +32,15 @@ export interface GenerationHistoryEntry {
 
 const MAX_HISTORY = 50;
 const FULL_IMAGE_KEEP = 10; // keep full images only for N most recent
+const HISTORY_EVENT = 'spritebrew_generation_history_change';
 
 /** Build the per-user localStorage key. Falls back to "anonymous" when not signed in. */
 function historyKey(userId: string | null | undefined): string {
   return `spritebrew_generations_${userId || 'anonymous'}`;
 }
 
-/** Read all history entries (newest first) for the given user. */
-export function loadHistory(userId: string | null | undefined): GenerationHistoryEntry[] {
-  if (typeof window === 'undefined') return [];
+function parseHistory(raw: string | null): GenerationHistoryEntry[] {
   try {
-    const raw = localStorage.getItem(historyKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -60,11 +60,51 @@ export function loadHistory(userId: string | null | undefined): GenerationHistor
         thumbnailDataUrl:
           (e.thumbnailDataUrl as string) ?? (e.thumbnail as string) ?? '',
         fullImageDataUrl: e.fullImageDataUrl as string | undefined,
+        slicerHints: e.slicerHints as SlicerHints | undefined,
       })
     );
   } catch {
     return [];
   }
+}
+
+function historySnapshot(userId: string | null | undefined): string {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem(historyKey(userId)) ?? '';
+}
+
+function notifyHistoryChanged() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(HISTORY_EVENT));
+}
+
+function subscribeHistory(callback: () => void) {
+  if (typeof window === 'undefined') return () => {};
+
+  window.addEventListener('storage', callback);
+  window.addEventListener(HISTORY_EVENT, callback);
+
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener(HISTORY_EVENT, callback);
+  };
+}
+
+/** Read all history entries (newest first) for the given user. */
+export function loadHistory(userId: string | null | undefined): GenerationHistoryEntry[] {
+  return parseHistory(historySnapshot(userId));
+}
+
+/** Subscribe to history changes without using effect-driven state sync. */
+export function useGenerationHistory(
+  userId: string | null | undefined
+): GenerationHistoryEntry[] {
+  const raw = useSyncExternalStore(
+    subscribeHistory,
+    () => historySnapshot(userId),
+    () => ''
+  );
+  return useMemo(() => parseHistory(raw), [raw]);
 }
 
 /** Save entries to localStorage, pruning full images from older entries first. */
@@ -86,6 +126,7 @@ function saveHistory(userId: string | null | undefined, entries: GenerationHisto
 
   try {
     localStorage.setItem(key, JSON.stringify(trimmed));
+    notifyHistoryChanged();
   } catch {
     // Quota exceeded — try again with fewer full images
     try {
@@ -93,9 +134,10 @@ function saveHistory(userId: string | null | undefined, entries: GenerationHisto
         if (idx < 3) return entry;
         const { fullImageDataUrl: _unused, ...rest } = entry;
         void _unused;
-        return rest;
+          return rest;
       });
       localStorage.setItem(key, JSON.stringify(stripped));
+      notifyHistoryChanged();
     } catch {
       // Still failed — drop full images entirely
       try {
@@ -104,6 +146,7 @@ function saveHistory(userId: string | null | undefined, entries: GenerationHisto
           return rest;
         });
         localStorage.setItem(key, JSON.stringify(noFull));
+        notifyHistoryChanged();
       } catch {
         // Give up — localStorage unavailable
       }
@@ -173,6 +216,7 @@ export function deleteHistoryEntry(userId: string | null | undefined, id: string
 export function clearHistory(userId: string | null | undefined): void {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(historyKey(userId));
+  notifyHistoryChanged();
 }
 
 /** Format a timestamp as a relative string. */

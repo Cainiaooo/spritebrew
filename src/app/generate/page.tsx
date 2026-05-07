@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Sparkles, Play } from 'lucide-react';
 import GenerationForm from '@/components/sprites/GenerationForm';
 import AnimateForm from '@/components/sprites/AnimateForm';
@@ -18,14 +18,6 @@ export default function GeneratePage() {
 
   const [tab, setTab] = useState<GenerateTab>('create');
   const [showForm, setShowForm] = useState(true);
-  const prevDataUrl = useRef(generatedImageDataUrl);
-
-  useEffect(() => {
-    if (generatedImageDataUrl && generatedImageDataUrl !== prevDataUrl.current) {
-      setShowForm(false);
-    }
-    prevDataUrl.current = generatedImageDataUrl;
-  }, [generatedImageDataUrl]);
 
   const handleTabChange = useCallback(
     (newTab: GenerateTab) => {
@@ -63,6 +55,7 @@ export default function GeneratePage() {
       fullImageDataUrl: dataUrl,
       slicerHints,
     });
+    setShowForm(false);
   }, []);
 
   const handleReset = useCallback(() => {

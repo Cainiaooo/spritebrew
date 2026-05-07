@@ -50,13 +50,7 @@ export default function AnimationPlayer({ frameDataUrls }: AnimationPlayerProps)
   // Pick the active animation
   const anim: SpriteAnimation | undefined =
     animations.find((a) => a.id === selectedAnimId) ?? animations[0];
-
-  // Auto-select first animation
-  useEffect(() => {
-    if (animations.length > 0 && !animations.find((a) => a.id === selectedAnimId)) {
-      setSelectedAnimId(animations[0].id);
-    }
-  }, [animations, selectedAnimId]);
+  const effectiveSelectedAnimId = anim?.id ?? '';
 
   // Preload frame images
   useEffect(() => {
@@ -241,7 +235,7 @@ export default function AnimationPlayer({ frameDataUrls }: AnimationPlayerProps)
             Animation
           </label>
           <select
-            value={selectedAnimId}
+            value={effectiveSelectedAnimId}
             onChange={(e) => {
               setSelectedAnimId(e.target.value);
               setCurrentFrame(0);

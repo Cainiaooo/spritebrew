@@ -36,21 +36,20 @@ type BannerState = 'detecting' | 'detected' | 'adjusting' | 'none';
 
 export default function BgRemovalBanner({
   imageUrl,
-  imageWidth,
-  imageHeight,
   onRemoved,
   onDismiss,
 }: BgRemovalBannerProps) {
-  const [state, setState] = useState<BannerState>('detecting');
-  const [bgColor, setBgColor] = useState<{ r: number; g: number; b: number } | null>(null);
+  const [detection, setDetection] = useState<{
+    imageUrl: string;
+    state: BannerState;
+    bgColor: { r: number; g: number; b: number } | null;
+  }>({ imageUrl, state: 'detecting', bgColor: null });
   const [tolerance, setTolerance] = useState(30);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   // Auto-detect on mount / image change
   useEffect(() => {
     let cancelled = false;
-    setState('detecting');
-    setBgColor(null);
 
     (async () => {
       try {
@@ -64,18 +63,20 @@ export default function BgRemovalBanner({
         if (cancelled) return;
 
         if (detected) {
-          setBgColor(detected);
-          setState('detected');
+          setDetection({ imageUrl, state: 'detected', bgColor: detected });
         } else {
-          setState('none');
+          setDetection({ imageUrl, state: 'none', bgColor: null });
         }
       } catch {
-        if (!cancelled) setState('none');
+        if (!cancelled) setDetection({ imageUrl, state: 'none', bgColor: null });
       }
     })();
 
     return () => { cancelled = true; };
   }, [imageUrl]);
+
+  const state = detection.imageUrl === imageUrl ? detection.state : 'detecting';
+  const bgColor = detection.imageUrl === imageUrl ? detection.bgColor : null;
 
   // Re-compute preview whenever tolerance changes while adjusting
   useEffect(() => {
@@ -97,8 +98,13 @@ export default function BgRemovalBanner({
   }, [state, bgColor, tolerance, imageUrl]);
 
   const handleRemoveClick = useCallback(() => {
-    setState('adjusting');
-  }, []);
+    setPreviewUrl(null);
+    setDetection((current) => ({
+      imageUrl,
+      state: 'adjusting',
+      bgColor: current.imageUrl === imageUrl ? current.bgColor : null,
+    }));
+  }, [imageUrl]);
 
   const handleApply = useCallback(() => {
     if (previewUrl) {

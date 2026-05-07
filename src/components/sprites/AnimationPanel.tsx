@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Plus,
   Trash2,
@@ -217,34 +217,19 @@ export default function AnimationPanel({ frameDataUrls }: AnimationPanelProps) {
   const updateAnimationFps = useSpriteStore((s) => s.updateAnimationFps);
   const updateFrameOrder = useSpriteStore((s) => s.updateFrameOrder);
 
-  const [selectedType, setSelectedType] = useState<string>(
-    currentSheetMetadata?.animationType ?? ANIMATION_TYPES[0].id
-  );
+  const metadataSelectedType = currentSheetMetadata
+    ? ANIMATION_TYPES.find((t) => t.id === currentSheetMetadata.animationType)?.id
+    : null;
+  const [selectedTypeOverride, setSelectedTypeOverride] = useState<string | null>(null);
+  const selectedType = selectedTypeOverride ?? metadataSelectedType ?? ANIMATION_TYPES[0].id;
   const [customName, setCustomName] = useState('');
   const [layoutOverride, setLayoutOverride] = useState<LayoutMode | null>(null);
   const [autoAssignPreview, setAutoAssignPreview] = useState<ProposedAnimation[] | null>(null);
   const [nameManuallyEdited, setNameManuallyEdited] = useState<boolean[]>([]);
 
-  // When sheet metadata arrives (gallery handoff), pre-select type and layout
-  useEffect(() => {
-    if (currentSheetMetadata) {
-      const matchingType = ANIMATION_TYPES.find((t) => t.id === currentSheetMetadata.animationType);
-      if (matchingType) {
-        setSelectedType(matchingType.id);
-      } else {
-        console.warn(
-          '[Slicer] Unknown animationType from gallery metadata:',
-          currentSheetMetadata.animationType,
-          '— Type dropdown unchanged. User can select manually or override in preview.'
-        );
-      }
-      setLayoutOverride(currentSheetMetadata.directional ? 'directional' : 'single');
-    }
-  }, [currentSheetMetadata]);
-
   // When user changes Type dropdown, update layout to the type's default
   const handleTypeChange = useCallback((typeId: string) => {
-    setSelectedType(typeId);
+    setSelectedTypeOverride(typeId);
     const type = ANIMATION_TYPES.find((t) => t.id === typeId);
     if (type) {
       setLayoutOverride(type.defaultDirectional ? 'directional' : 'single');

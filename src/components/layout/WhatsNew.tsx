@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { X } from 'lucide-react';
 
 /**
@@ -14,6 +14,7 @@ import { X } from 'lucide-react';
 export const CURRENT_VERSION = '0.3.0';
 
 const STORAGE_KEY = 'spritebrew_seen_version';
+const VERSION_EVENT = 'spritebrew_seen_version_change';
 
 interface ChangelogEntry {
   emoji: string;
@@ -87,26 +88,44 @@ const CHANGELOG: ChangelogEntry[] = [
   },
 ];
 
-export default function WhatsNew() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      // Only show if there's a stored version AND it's different from current.
-      // First-ever visitors (no stored value) get silently marked as up-to-date.
-      if (stored === null) {
-        localStorage.setItem(STORAGE_KEY, CURRENT_VERSION);
-        return;
-      }
-      if (stored !== CURRENT_VERSION) {
-        setOpen(true);
-      }
-    } catch {
-      // localStorage unavailable — don't show the modal
+function getShouldShowWhatsNew() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    // Only show if there's a stored version AND it's different from current.
+    // First-ever visitors (no stored value) get silently marked as up-to-date.
+    if (stored === null) {
+      localStorage.setItem(STORAGE_KEY, CURRENT_VERSION);
+      return false;
     }
-  }, []);
+    return stored !== CURRENT_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function subscribeToVersionChange(callback: () => void) {
+  if (typeof window === 'undefined') return () => {};
+
+  window.addEventListener('storage', callback);
+  window.addEventListener(VERSION_EVENT, callback);
+
+  return () => {
+    window.removeEventListener('storage', callback);
+    window.removeEventListener(VERSION_EVENT, callback);
+  };
+}
+
+function notifyVersionChange() {
+  window.dispatchEvent(new Event(VERSION_EVENT));
+}
+
+export default function WhatsNew() {
+  const open = useSyncExternalStore(
+    subscribeToVersionChange,
+    getShouldShowWhatsNew,
+    () => false
+  );
 
   const handleDismiss = useCallback(() => {
     try {
@@ -114,7 +133,7 @@ export default function WhatsNew() {
     } catch {
       // ignore
     }
-    setOpen(false);
+    notifyVersionChange();
   }, []);
 
   if (!open) return null;
