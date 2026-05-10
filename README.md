@@ -60,6 +60,9 @@ Sign in with GitHub or email. Free tools work without an account. AI generation 
 ### 📐 Pixel-Perfect Image Resizer
 Built-in nearest-neighbor resizing for preparing pixel art for animation. Upload a high-res character, resize to 64×64 with crisp pixel-perfect scaling — no blurry bilinear interpolation.
 
+### 🤖 Agent-Facing CLI
+Beyond the web UI, every generation capability is also exposed as a stateless CLI so AI agents can drive SpriteBrew headlessly. Five actions ship today: `generate`, `animate`, `styles_list`, `parts_list`, `codex_build`. Self-describing JSON Schema, NDJSON streaming for partial-image previews, unified error envelope, idempotency keys. A bundled Claude Code skill (`skills/spritebrew-cli/`) teaches Claude how to call it. Powered by [Ageniti](https://github.com/Ageniti/ageniti). See [CLI for Agents](#cli-for-agents) below.
+
 ---
 
 ## Tech Stack
@@ -140,6 +143,64 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 **Note:** The waitlist feature requires a Cloudflare KV binding (`SPRITEBREW_KV`) to work in production. Local development works without it (falls back to in-memory storage).
+
+---
+
+## CLI for Agents
+
+SpriteBrew ships an [Ageniti](https://github.com/Ageniti/ageniti)-powered CLI so AI agents can generate sprites without opening the browser. The CLI is stateless (no auth / no token billing / no history persistence) and shares all generation logic with the web UI through `src/lib/generation/` — fix a bug once and both surfaces benefit.
+
+### Quick start
+
+```bash
+# Discover what's available
+npm run cli -- actions                          # list all actions + JSON Schemas
+npm run cli -- generate --schema                # one action's schema
+npm run cli -- styles_list --tier fast          # browse generation styles
+npm run cli -- parts_list --category eyes       # browse outfit parts
+
+# Generate
+npm run cli -- generate \
+  --prompt "a cute red dragon, big eyes" \
+  --style character --width 64 --height 64
+
+# Animate (input must be raw base64, no data: prefix)
+B64=$(base64 -w0 char.png)
+npm run cli -- animate --input-image "$B64" --action walking --frames-duration 6 --ndjson
+```
+
+Output is a unified envelope (`{ ok, data | error, artifacts, logs, meta }`); `--ndjson` switches to per-line streaming events including in-progress AI partial frames. Errors are typed (`VALIDATION_ERROR`, `INTERNAL_ERROR`, etc.) with non-zero exit codes.
+
+### Five actions
+
+| Action | Purpose |
+|---|---|
+| `generate` | Text → single pixel-art sprite |
+| `animate` | Existing sprite → multi-frame animation strip |
+| `styles_list` | Filter generation styles by tier or category |
+| `parts_list` | Browse Pixabots outfit parts (eyes / heads / body / top) |
+| `codex_build` | Pack 9 state PNGs into a Codex Pet bundle (pet.json + WebP atlas) |
+
+### Skill for Claude Code
+
+A ready-to-use [Claude Code](https://claude.com/claude-code) skill lives at [`skills/spritebrew-cli/`](./skills/spritebrew-cli/SKILL.md). Install it locally and Claude will auto-load CLI usage guidance whenever you ask for headless sprite generation:
+
+```bash
+npm run skills:install     # copies skills/* → .claude/skills/*
+```
+
+See [`skills/README.md`](./skills/README.md) for global-install and authoring instructions.
+
+### Architecture
+
+```
+bin/spritebrew.ts → src/ageniti/app.ts → 5 actions → src/lib/generation/* → src/lib/imageGen/*
+                                                          ↑
+                                                  src/app/api/generate/route.ts
+                                                  (SSE wrapper for the web UI)
+```
+
+Both the SSE route and the CLI actions call the same `runCreate` / `runAnimate` functions. Add a new action by dropping a file under `src/ageniti/actions/` and registering it in `src/ageniti/app.ts` — the schema is auto-discovered. Detailed call paths: see [`CLAUDE.md`](./CLAUDE.md#agent-facing-cli-ageniti).
 
 ---
 

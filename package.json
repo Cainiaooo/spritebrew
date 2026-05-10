@@ -6,9 +6,13 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cli": "tsx bin/spritebrew.ts",
+    "cli:typecheck": "tsc -p tsconfig.cli.json --noEmit",
+    "skills:install": "node scripts/install-skills.mjs"
   },
   "dependencies": {
+    "@ageniti/core": "^0.1.2",
     "image-q": "^4.0.0",
     "jszip": "^3.10.1",
     "lucide-react": "^1.7.0",
@@ -29,6 +33,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.2",
     "tailwindcss": "^4",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

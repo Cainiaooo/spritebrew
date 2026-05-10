@@ -67,6 +67,12 @@ npm run dev          # Start development server (localhost:3000)
 npm run build        # Production build
 npm run start        # Start production server
 npm run lint         # Run ESLint
+
+# Agent-facing CLI (Ageniti):
+npm run cli -- actions                       # list all CLI actions + JSON Schemas
+npm run cli -- styles_list --tier fast       # introspect generation styles
+npm run cli -- generate --schema             # show one action's input schema
+npm run cli:typecheck                        # type-check just the CLI surface
 ```
 
 **Environment variables** (`.env.local`):
@@ -83,8 +89,11 @@ NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=...
 
 ## Key Architecture Patterns
 
+### Agent-Facing CLI (Ageniti)
+The same generation core that powers the web UI is exposed as an Ageniti app under `src/ageniti/` so AI agents can drive SpriteBrew headlessly. Five actions ship today: `generate`, `animate`, `styles_list`, `parts_list`, `codex_build`. Pure logic lives in `src/lib/generation/` (`runCreate` / `runAnimate` / prompts / validators) and is shared by both the SSE route (`src/app/api/generate/route.ts`) and the CLI actions. The CLI is stateless — no Clerk auth, no token billing, no history persistence; agents only get the compute. See `.claude/skills/spritebrew-cli/SKILL.md` for the agent-facing usage guide and `E:\Projects\Ageniti\AGENTS.md` for protocol-level detail.
+
 ### SSE Streaming Generation
-The `/api/generate` route uses Server-Sent Events with 15-second heartbeat pings to keep the Cloudflare proxy alive during long AI generations (Cloudflare Pages has a 120-second proxy timeout). Client consumes via `src/lib/sseClient.ts`.
+The `/api/generate` route uses Server-Sent Events with 15-second heartbeat pings to keep the Cloudflare proxy alive during long AI generations (Cloudflare Pages has a 120-second proxy timeout). Client consumes via `src/lib/sseClient.ts`. The route delegates to `runCreate` / `runAnimate` in `src/lib/generation/` — same code path the CLI uses.
 
 ### Style Registry
 `src/lib/styleRegistry.ts` is the **single source of truth** for all generation styles. Each entry maps to a Retro Diffusion `prompt_style` value. Styles are organized by tier:
@@ -124,11 +133,12 @@ The `/api/generate` route uses Server-Sent Events with 15-second heartbeat pings
 
 ## What to Update When Making Changes
 
-- **Adding a new generation style** → Add entry to `GENERATION_STYLES` in `styleRegistry.ts`
-- **Adding a new animation type** → Add to `ANIMATION_TYPES` in `constants.ts` + `VALID_ACTIONS` + `ACTION_STYLE_MAP` + `ACTION_PROMPT_PREFIX` in `api/generate/route.ts`
-- **Adding a new export format** → Add to `ENGINE_TARGETS` in `constants.ts` + implement in `exportEngine.ts`
+- **Adding a new generation style** → Add entry to `GENERATION_STYLES` in `styleRegistry.ts` (auto-propagates to `styles_list` CLI action)
+- **Adding a new animation type** → Add to `VALID_ACTIONS` + `ACTION_PROMPT_PREFIX` in `src/lib/generation/validate.ts` (used by both SSE route and `animate` CLI action)
+- **Adding a new export format** → Add to `ENGINE_TARGETS` in `constants.ts` + implement in `exportEngine.ts` (currently web-only)
 - **Adding a new sprite size preset** → Add to `SLICER_FRAME_PRESETS` in `constants.ts`
-- **Changing AI backend** → Modify `callRD()` in `api/generate/route.ts` + update `styleRegistry.ts` prompt_style values
+- **Changing AI backend** → Modify the adapter selection in `src/lib/imageGen/index.ts`; both SSE route and CLI flow through the adapter
+- **Adding a new agent-facing action** → Define under `src/ageniti/actions/`, register in `src/ageniti/app.ts`, document in `.claude/skills/spritebrew-cli/SKILL.md`
 
 ## Fork Notes
 

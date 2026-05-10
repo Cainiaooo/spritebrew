@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "jsx": "preserve",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "src/ageniti/**/*.ts",
+    "src/lib/generation/**/*.ts",
+    "src/lib/styleRegistry.ts",
+    "src/lib/parts/catalog.ts",
+    "src/lib/parts/compositor.ts",
+    "src/lib/imageGen/**/*.ts",
+    "src/lib/codexPetExport.ts",
+    "src/lib/templates/codexPet.ts",
+    "bin/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
+}
