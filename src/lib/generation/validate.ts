@@ -3,6 +3,10 @@
 // by both the Next.js route and the Ageniti CLI surface.
 
 import { getResolutionMode } from '@/lib/styleRegistry';
+import {
+  MAX_REFERENCE_IMAGES,
+  REF_TOTAL_BASE64_BUDGET,
+} from '@/lib/imageGen/referenceLimits';
 import { PARTS, type Outfit, type PartCategory } from '@/lib/parts/catalog';
 import type { CreateInput, AnimateInput } from './types';
 
@@ -29,9 +33,6 @@ export const ACTION_PROMPT_PREFIX: Record<string, string> = {
   subtle_motion: 'subtle ambient motion',
   custom_action: '',
 };
-
-export const MAX_REFERENCE_IMAGES = 4;
-export const REF_TOTAL_BASE64_BUDGET = (12 * 1024 * 1024 * 4) / 3;
 
 export function validateCreateBody(body: CreateInput): string | null {
   if (!body.prompt?.trim()) return 'Prompt is required.';

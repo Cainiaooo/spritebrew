@@ -75,10 +75,15 @@ export class GeminiAdapter implements ImageGenAdapter {
   }
 
   async editWithReference(req: EditRequest): Promise<GenResult> {
+    if (!req.referenceImages.length) {
+      throw new Error('GeminiAdapter.editWithReference: referenceImages is empty.');
+    }
     const parts: GeminiPart[] = [
       { text: `${req.prompt}, ${TRANSPARENT_BG_HINT}` },
-      { inline_data: { mime_type: 'image/png', data: req.referenceImage } },
     ];
+    for (const ref of req.referenceImages) {
+      parts.push({ inline_data: { mime_type: 'image/png', data: ref } });
+    }
     return this.callApi(parts);
   }
 

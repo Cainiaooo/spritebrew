@@ -10,7 +10,12 @@ export interface GenerateRequest {
 }
 
 export interface EditRequest {
-  referenceImage: string;
+  /**
+   * Base64-encoded reference images (no `data:` prefix). At least one
+   * image must be provided; adapters that can only consume a single
+   * reference will use the first entry.
+   */
+  referenceImages: string[];
   prompt: string;
   canvasSize?: { w: number; h: number };
   onPartialImage?: PartialImageHandler;
@@ -29,5 +34,3 @@ export interface ImageGenAdapter {
   generate(req: GenerateRequest): Promise<GenResult>;
   editWithReference(req: EditRequest): Promise<GenResult>;
 }
-
-export type ImageGenProvider = 'gpt-image' | 'gpt-image-responses' | 'gemini';

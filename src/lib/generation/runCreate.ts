@@ -31,9 +31,10 @@ export async function runCreate(
     w,
     h,
     body.removeBg ?? true,
+    style.promptHints,
   );
 
-  const adapter = getImageGenAdapter();
+  const adapter = await getImageGenAdapter();
   const raw = await adapter.generate({
     prompt,
     width: w,

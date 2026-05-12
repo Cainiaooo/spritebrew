@@ -23,7 +23,7 @@ SpriteBrew is a web-based tool for game developers and pixel artists that combin
 ## Features
 
 ### 🎨 AI Sprite Generation
-Describe a character in plain text and get a complete animated sprite sheet. Choose from multiple animation styles including 4-angle walking, walking & idle, small sprites, and VFX. Powered by Retro Diffusion's pixel art models.
+Describe a character in plain text and get a complete animated sprite sheet. Choose from multiple animation styles including 4-angle walking, walking & idle, small sprites, and VFX. This local fork routes generation through OpenAI's gpt-image family (direct, via OpenAI-compatible relay, or via a ChatGPT Plus/Pro Codex OAuth token) or Google Gemini Nano Banana 2 — pick whichever credential you have via one env var.
 
 <!-- TODO: Add animated GIF of the generation flow -->
 
@@ -74,7 +74,7 @@ Beyond the web UI, every generation capability is also exposed as a stateless CL
 | State | Zustand |
 | Animation | PixiJS 8 |
 | Auth | Clerk (`@clerk/react`) |
-| AI Backend | Retro Diffusion (direct API + Replicate hosting) |
+| AI Backend | OpenAI gpt-image (native / relay / Codex OAuth) · Google Gemini |
 | Storage | Cloudflare KV |
 | Export | JSZip |
 | Hosting | Cloudflare Pages |
@@ -106,34 +106,55 @@ npm install
 cp .env.example .env.local
 ```
 
-Add your API keys to `.env.local`. This local fork uses **GPT Image** or **Gemini** as the AI backend, switchable via one env var. Pick whichever provider matches the API key you have:
+Add your API keys to `.env.local` (see [`.env.example`](.env.example) for the full template). The generation layer has **two orthogonal knobs**: `IMAGE_GEN_AUTH_MODE` chooses where the credential comes from, and the legacy `IMAGE_GEN_API_PROVIDER` only kicks in when you need Gemini or a Responses-API relay. Pick whichever credential you have:
 
 ```env
-# Pick one provider
-IMAGE_GEN_API_PROVIDER=gpt-image      # or: gpt-image-responses / gemini
+# ── Credential source (required) ──
+#   api-key     — env OPENAI_API_KEY + OPENAI_BASE_URL (default)
+#   codex-key   — ~/.codex/auth.json `OPENAI_API_KEY` field
+#   codex-oauth — ~/.codex/auth.json OAuth tokens → chatgpt.com/backend-api/codex
+#   codex-auto  — env api-key → auth.json api-key → auth.json oauth
+IMAGE_GEN_AUTH_MODE=api-key
+
+# Only set this when you want the non-default path:
+#   empty                 — use the Images API (default)
+#   gpt-image-responses   — relay-only mode that routes via /v1/responses
+#   gemini                — bypass auth-mode and use GeminiAdapter
+IMAGE_GEN_API_PROVIDER=
 
 # ── GPT Image (OpenAI-native or OpenAI-compatible relay) ──
 OPENAI_BASE_URL=https://api.openai.com    # default; relay: https://your-relay.com
 OPENAI_API_KEY=sk-...
 OPENAI_IMAGE_MODEL=gpt-image-2            # default
+OPENAI_IMAGE_QUALITY=high                 # low | medium | high | auto
 
 # ── GPT Image via Responses API (relay-only mode) ──
 # Some relays only expose /v1/responses (not /v1/images/generations).
 # They also encode the output size into the model name suffix
-# (gpt-image-1024x1536). Use this provider for those:
+# (gpt-image-1024x1536). Set both of:
 #
 # IMAGE_GEN_API_PROVIDER=gpt-image-responses
-# OPENAI_BASE_URL=https://your-relay.example
-# OPENAI_API_KEY=<relay-token>
 # OPENAI_IMAGE_MODEL=gpt-image            # prefix only — adapter appends size
 
-# ── Gemini Nano Banana 2 ──
+# ── Codex OAuth (free for ChatGPT Plus/Pro subscribers) ──
+# Log in once with `codex login` (no --with-api-key) so ~/.codex/auth.json
+# has the `tokens` block. Then:
+#
+# IMAGE_GEN_AUTH_MODE=codex-oauth
+# CODEX_HOME=                             # empty → ~/.codex
+# CODEX_MAIN_MODEL=                       # empty → gpt-5.5
+#
+# Generation runs against your ChatGPT subscription quota, not API billing.
+# On 401 the adapter auto-refreshes via the Codex CLI public client_id.
+
+# ── Gemini Nano Banana 2 (non-mainline) ──
+# IMAGE_GEN_API_PROVIDER=gemini
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com
 GEMINI_API_KEY=AIza...
 GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview
 ```
 
-Only fill in the provider you've selected — the other section can stay empty. Detailed per-provider notes (relay quirks, model name conventions, transparent-background handling) are in [`docs/usage.md`](docs/usage.md).
+Only fill in the provider you've selected — the other sections can stay empty. Reference-image edits accept **up to 16 images** per request. Detailed per-provider notes (relay quirks, model name conventions, transparent-background handling) are in [`docs/usage.md`](docs/usage.md).
 
 ```bash
 # Run development server

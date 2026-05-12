@@ -37,10 +37,10 @@ export async function runAnimate(
   });
 
   const referenceB64 = body.inputImage.replace(/^data:image\/[a-z]+;base64,/, '');
-  const adapter = getImageGenAdapter();
+  const adapter = await getImageGenAdapter();
 
   const raw = await adapter.editWithReference({
-    referenceImage: referenceB64,
+    referenceImages: [referenceB64],
     prompt,
     canvasSize: { w: layout.canvasW, h: layout.canvasH },
     onPartialImage,

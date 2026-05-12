@@ -9,6 +9,8 @@ import {
 } from 'react';
 import { X, ImagePlus, AlertCircle } from 'lucide-react';
 
+import { MAX_REFERENCE_IMAGES } from '@/lib/imageGen/referenceLimits';
+
 interface ReferenceImagesPanelProps {
   /** Array of base64 PNG strings (no `data:` prefix), preprocessed and ready for API submission */
   referenceImages: string[];
@@ -19,7 +21,6 @@ interface ReferenceImagesPanelProps {
   enabled: boolean;
 }
 
-const MAX_REFS = 9;
 const MAX_LONGEST_EDGE = 256;
 const MAX_BASE64_CHARS = 1_400_000;
 const ACCEPTED_MIME = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
@@ -88,9 +89,11 @@ export default function ReferenceImagesPanel({
       if (!enabled || !incoming || incoming.length === 0) return;
 
       let files = Array.from(incoming);
-      const remaining = MAX_REFS - referenceImages.length;
+      const remaining = MAX_REFERENCE_IMAGES - referenceImages.length;
       if (files.length > remaining) {
-        setError(`Maximum ${MAX_REFS} reference images. Only the first ${remaining} added.`);
+        setError(
+          `Maximum ${MAX_REFERENCE_IMAGES} reference images. Only the first ${remaining} added.`,
+        );
         files = files.slice(0, remaining);
       }
 
@@ -156,12 +159,13 @@ export default function ReferenceImagesPanel({
           <span className="text-text-muted font-normal normal-case ml-2">(optional)</span>
         </label>
         <span className={`text-[10px] font-mono ${count > 0 ? 'text-accent-amber' : 'text-text-muted'}`}>
-          {count} / {MAX_REFS}
+          {count} / {MAX_REFERENCE_IMAGES}
         </span>
       </div>
 
       <p className="text-[10px] font-mono text-text-muted leading-relaxed mb-3">
-        Up to 9 images that guide the style, palette, and design feel of your sprite.
+        Up to {MAX_REFERENCE_IMAGES} images that guide the style, palette, and design feel of your
+        sprite.
         References do NOT preserve a specific character&apos;s identity across new poses.
       </p>
 
@@ -208,7 +212,7 @@ export default function ReferenceImagesPanel({
             Add Images
           </p>
           <p className="text-[10px] font-mono text-text-muted">
-            Drop images or click to browse · {MAX_REFS} max · PNG/JPG/WEBP
+            Drop images or click to browse · {MAX_REFERENCE_IMAGES} max · PNG/JPG/WEBP
           </p>
         </div>
       ) : (
@@ -243,7 +247,7 @@ export default function ReferenceImagesPanel({
                 </button>
               </div>
             ))}
-            {count < MAX_REFS && (
+            {count < MAX_REFERENCE_IMAGES && (
               <button
                 type="button"
                 onClick={triggerFilePicker}

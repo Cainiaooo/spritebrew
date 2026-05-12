@@ -13,6 +13,25 @@ export type ResolutionMode =
   | { kind: 'variable_special'; min: number; max: number; default: number; presets: number[] }
   | { kind: 'locked'; size: number };
 
+/**
+ * Per-style overrides for the shared pixel-sprite prompt scaffolding.
+ *
+ * `buildCreatePrompt` merges these on top of `DEFAULT_PIXEL_SPRITE_HINTS`
+ * (defined in `src/lib/generation/prompts.ts`) so individual styles can
+ * tighten composition / lighting / negative constraints without rewriting
+ * the whole prompt template.
+ */
+export interface StylePromptHints {
+  /** Overrides the default lighting clause. */
+  lighting?: string;
+  /** Overrides the default composition clause. */
+  composition?: string;
+  /** Overrides the default "avoid:" clause (category-specific negatives). */
+  avoid?: string;
+  /** Extra free-form bullets appended at the end of the prompt. */
+  extra?: string[];
+}
+
 export interface GenerationStyle {
   id: string;
   label: string;
@@ -34,6 +53,8 @@ export interface GenerationStyle {
   supportsRemoveBg: boolean;
   supportsReferenceImages?: boolean;
   resolutionMode?: ResolutionMode;
+  /** Optional per-style overrides for `buildCreatePrompt` scaffolding. */
+  promptHints?: StylePromptHints;
 }
 
 // Shared "is NOT what" baseline. Models reach for painterly / 3D / glossy
@@ -62,6 +83,11 @@ export const GENERATION_STYLES: GenerationStyle[] = [
     defaultWidth: 64, defaultHeight: 64, minSize: 16, maxSize: 256,
     fixedSize: false, isAnimation: false, paletteColors: 32,
     supportsRemoveBg: true, supportsReferenceImages: true,
+    promptHints: {
+      composition: 'side or three-quarter view, full body visible with margin',
+      avoid:
+        'portrait crop, close-up, environment scenery, text labels, UI panels, speech bubbles, glow, halo, floating symbols',
+    },
   },
   {
     id: 'character-portrait', label: 'Character Portrait', description: 'Frontal portrait, dialog-style bust',
@@ -110,6 +136,12 @@ export const GENERATION_STYLES: GenerationStyle[] = [
     defaultWidth: 64, defaultHeight: 64, minSize: 16, maxSize: 128,
     fixedSize: false, isAnimation: false, paletteColors: 24,
     supportsRemoveBg: true, supportsReferenceImages: true,
+    promptHints: {
+      composition: 'single object centered, three-quarter or top-down view',
+      lighting: 'flat even lighting, single soft shadow step',
+      avoid:
+        'character holding item, hands, environment, shadow ground patch, glow, sparkles, rarity beams, text labels',
+    },
   },
   {
     id: 'tile', label: 'Tile', description: 'Tileable terrain or environment tile',

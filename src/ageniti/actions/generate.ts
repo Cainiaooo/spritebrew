@@ -7,6 +7,7 @@
 import { defineAction, s } from '@ageniti/core';
 import { runCreate } from '@/lib/generation/runCreate';
 import { validateCreateBody } from '@/lib/generation/validate';
+import { MAX_REFERENCE_IMAGES } from '@/lib/imageGen/referenceLimits';
 import type { CreateInput } from '@/lib/generation/types';
 
 const outfitSchema = s
@@ -52,7 +53,7 @@ export const generate = defineAction({
       .array(s.string())
       .optional()
       .describe(
-        'Optional 1-4 reference images as raw base64 (no data: prefix). Total payload <16MB.',
+        `Optional 1-${MAX_REFERENCE_IMAGES} reference images as raw base64 (no data: prefix). Total payload <16MB.`,
       ),
     outfit: outfitSchema,
   }),

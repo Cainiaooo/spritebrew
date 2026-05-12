@@ -9,7 +9,8 @@
     "lint": "eslint",
     "cli": "tsx bin/spritebrew.ts",
     "cli:typecheck": "tsc -p tsconfig.cli.json --noEmit",
-    "skills:install": "node scripts/install-skills.mjs"
+    "skills:install": "node scripts/install-skills.mjs",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@ageniti/core": "^0.1.2",

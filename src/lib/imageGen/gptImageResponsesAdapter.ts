@@ -13,16 +13,16 @@
 // /v1/responses. Reference images are attached as `input_image` content
 // blocks alongside the prompt text.
 //
-// Configurable via env (reuses the existing OPENAI_* vars):
-//   OPENAI_BASE_URL      relay base URL
-//   OPENAI_API_KEY       relay token
-//   OPENAI_IMAGE_MODEL   model prefix; default 'gpt-image' (size suffix
-//                        is appended automatically: gpt-image-1024x1024,
-//                        gpt-image-1536x1024, gpt-image-1024x1536)
-//   OPENAI_RESPONSES_IMAGE_MODE
-//                        'model-size' default, or 'image-tool' for relays that
-//                        follow the Responses `tools: [{type:'image_generation'}]`
-//                        request shape.
+// Credentials (bearer + base URL + extra headers) come from an injected
+// `ResolvedCredential` — the adapter no longer reads env for auth.
+// Model prefix / request mode / quality still come from env.
+//
+//   OPENAI_IMAGE_MODEL           model prefix; default 'gpt-image'
+//                                (size suffix is appended automatically:
+//                                gpt-image-1024x1024, etc.)
+//   OPENAI_RESPONSES_IMAGE_MODE  'model-size' default, or 'image-tool' for
+//                                relays that follow the Responses
+//                                `tools:[{type:'image_generation'}]` shape.
 
 import type {
   EditRequest,
@@ -31,18 +31,23 @@ import type {
   ImageGenAdapter,
   PartialImageHandler,
 } from './types';
+import type { ResolvedCredential } from './auth/types';
 import { fetchWithRetry } from './retry';
 import {
   extractImageBase64,
   parseMaybeJson,
 } from './responseImage';
+import {
+  resolveImageQuality,
+  validateQuality,
+  validateReferenceImages,
+  validateSize,
+} from './validation';
 
-const DEFAULT_BASE_URL = 'https://api.openai.com';
 const DEFAULT_MODEL_PREFIX = 'gpt-image';
 
 export interface GptImageResponsesAdapterOptions {
-  apiKey?: string;
-  baseUrl?: string;
+  credential: ResolvedCredential;
   modelPrefix?: string;
   requestMode?: 'model-size' | 'image-tool';
   quality?: 'low' | 'medium' | 'high' | 'auto';
@@ -55,31 +60,39 @@ interface ResponsesContentBlock {
 }
 
 export class GptImageResponsesAdapter implements ImageGenAdapter {
-  private readonly apiKey: string;
-  private readonly baseUrl: string;
+  private readonly credential: ResolvedCredential;
   private readonly modelPrefix: string;
   private readonly requestMode: 'model-size' | 'image-tool';
   private readonly quality: 'low' | 'medium' | 'high' | 'auto';
 
-  constructor(opts: GptImageResponsesAdapterOptions = {}) {
-    const key = opts.apiKey ?? process.env.OPENAI_API_KEY;
-    if (!key) throw new Error('OPENAI_API_KEY is not set.');
-    this.apiKey = key;
-    this.baseUrl = trimSlash(
-      opts.baseUrl ?? process.env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL,
-    );
+  constructor(opts: GptImageResponsesAdapterOptions) {
+    this.credential = opts.credential;
     this.modelPrefix =
       opts.modelPrefix ?? process.env.OPENAI_IMAGE_MODEL ?? DEFAULT_MODEL_PREFIX;
     this.requestMode = pickRequestMode(opts.requestMode);
-    this.quality = opts.quality ?? pickQuality(process.env.OPENAI_IMAGE_QUALITY) ?? 'auto';
+    this.quality = resolveImageQuality(opts.quality);
   }
 
   private get url(): string {
-    return `${this.baseUrl}/v1/responses`;
+    return `${this.credential.endpointBase}/v1/responses`;
+  }
+
+  private async authHeader(): Promise<string> {
+    if (this.credential.kind === 'codex-oauth' && this.credential.fetchBearer) {
+      return `Bearer ${await this.credential.fetchBearer()}`;
+    }
+    if (!this.credential.bearer) {
+      throw new Error('GptImageResponsesAdapter: credential has no bearer or fetchBearer.');
+    }
+    return `Bearer ${this.credential.bearer}`;
   }
 
   async generate(req: GenerateRequest): Promise<GenResult> {
+    validateReferenceImages(req.referenceImages);
     const size = pickSize(req.width, req.height);
+    const [canvasW, canvasH] = size.split('x').map(Number);
+    validateSize(canvasW, canvasH);
+    validateQuality(this.quality);
     const content: ResponsesContentBlock[] = [
       { type: 'input_text', text: req.prompt },
     ];
@@ -93,12 +106,23 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
   }
 
   async editWithReference(req: EditRequest): Promise<GenResult> {
+    validateReferenceImages(req.referenceImages);
+    if (!req.referenceImages.length) {
+      throw new Error(
+        'GptImageResponsesAdapter.editWithReference: referenceImages is empty.',
+      );
+    }
     const canvas = req.canvasSize ?? { w: 1024, h: 1024 };
     const size = pickSize(canvas.w, canvas.h);
+    const [canvasW, canvasH] = size.split('x').map(Number);
+    validateSize(canvasW, canvasH);
+    validateQuality(this.quality);
     const content: ResponsesContentBlock[] = [
       { type: 'input_text', text: req.prompt },
-      { type: 'input_image', image_url: ensureDataUri(req.referenceImage) },
     ];
+    for (const img of req.referenceImages) {
+      content.push({ type: 'input_image', image_url: ensureDataUri(img) });
+    }
     return this.callResponses(size, content, null, req.onPartialImage);
   }
 
@@ -123,9 +147,10 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
     const res = await fetchWithRetry(this.url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        Authorization: await this.authHeader(),
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
+        ...(this.credential.extraHeaders ?? {}),
       },
       body: JSON.stringify(body),
     });
@@ -147,7 +172,7 @@ export class GptImageResponsesAdapter implements ImageGenAdapter {
   }
 }
 
-async function consumeResponsesStream(
+export async function consumeResponsesStream(
   body: ReadableStream<Uint8Array>,
   onPartialImage?: PartialImageHandler,
 ): Promise<string | null> {
@@ -198,10 +223,6 @@ function ensureDataUri(b64OrUri: string): string {
     : `data:image/png;base64,${b64OrUri}`;
 }
 
-function trimSlash(s: string): string {
-  return s.replace(/\/+$/, '');
-}
-
 function buildImageToolBody(
   model: string,
   size: string,
@@ -235,13 +256,7 @@ function pickRequestMode(
   return raw === 'image-tool' ? 'image-tool' : 'model-size';
 }
 
-function pickQuality(value: string | undefined): 'low' | 'medium' | 'high' | 'auto' | null {
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'auto'
-    ? value
-    : null;
-}
-
-function extractImageFromSseEvent(event: string): string | null {
+export function extractImageFromSseEvent(event: string): string | null {
   const dataLines = event
     .split('\n')
     .filter((line) => line.startsWith('data:'))
@@ -258,7 +273,7 @@ function extractImageFromSseEvent(event: string): string | null {
   return best;
 }
 
-function pickBestImage(current: string | null, next: string | null): string | null {
+export function pickBestImage(current: string | null, next: string | null): string | null {
   if (!next) return current;
   return !current || next.length > current.length ? next : current;
 }

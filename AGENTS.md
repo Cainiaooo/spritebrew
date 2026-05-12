@@ -1,140 +1,87 @@
 # SpriteBrew
 
-AI-powered pixel art sprite sheet generator. Forked from GAlbanese09/spritebrew.
+AI-powered pixel art sprite sheet generator built with Next.js. The web UI and the agent-facing CLI share the same generation core.
 
-## Project Structure
+## What Matters
 
-```
-spritebrew/
-  src/
-    app/                  — Next.js 16 App Router pages + API routes
-      api/generate/       — SSE-streaming generation endpoint (Retro Diffusion API)
-      api/generation-limit/ — Per-user daily limit check
-      api/stripe/         — Stripe checkout + webhook
-      api/token-balance/  — Token balance CRUD (Cloudflare KV)
-      api/waitlist/       — Waitlist management (Cloudflare KV)
-      generate/           — Create New / Animate My Character UI
-      upload/             — Upload & Slice sprite sheet
-      export/             — Multi-engine export page
-      gallery/            — Per-user generation history
-      preview/            — PixiJS animation preview / demo area
-      buy-tokens/         — Stripe-powered token purchase
-      admin/              — Admin tools (test-references, etc.)
-    components/
-      layout/             — AppShell, Header, Sidebar, ClerkClientProvider
-      sprites/            — Core sprite tools (SlicerConfig, GenerationForm, PixelEditor, etc.)
-      ui/                 — Reusable UI primitives (Button, Card, Badge, Tooltip)
-    lib/                  — Shared utilities and business logic
-      constants.ts        — Sprite sizes, slicer presets, animation types, engine targets
-      types.ts            — TypeScript interfaces (SpriteFrame, SpriteAnimation, SpriteSheet, etc.)
-      styleRegistry.ts    — Generation style registry (single source of truth for all RD prompt_style values)
-      exportEngine.ts     — Multi-engine export logic (TexturePacker, Godot .tres, Aseprite, etc.)
-      spriteUtils.ts      — Sprite manipulation helpers
-      generationHistory.ts — Per-user history persistence (localStorage + KV)
-      generationLimits.ts — Daily generation limits (localStorage)
-      sseClient.ts        — Client-side SSE consumer for streaming generation
-      tokenBalance.ts     — Token debit/credit against Cloudflare KV
-      stripe.ts           — Stripe checkout session + webhook handler
-      accountLock.ts      — Account lock/dispute status check
-    stores/
-      spriteStore.ts      — Zustand global state (sprite sheet, frames, animations, generation state)
-  public/                 — Static assets
-  scripts/
-    generate-favicon.mjs  — Favicon generation script
-```
+- `src/app/`: App Router pages and API routes. AI routes live under `api/` and use the Node.js runtime.
+- `src/ageniti/`: agent-facing CLI/app surface. Actions call the same generation code as the web route.
+- `src/lib/generation/`: shared create / animate pipelines, prompts, validators, and shared input types.
+- `src/lib/imageGen/`: adapter layer for GPT Image, Responses relay, Codex OAuth, and Gemini.
+- `src/lib/imageGen/auth/`: credential resolution from env, `~/.codex`, and cached OAuth refresh state.
+- `src/lib/styleRegistry.ts`: single source of truth for generation styles and per-style prompt hints.
+- `src/lib/exportEngine.ts`: multi-engine export logic.
+- `src/stores/spriteStore.ts`: single global sprite state store. Do not replace with React context.
 
-## Tech Stack
+## Core Rules
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 16 (React 19), App Router, Edge Runtime |
-| Styling | Tailwind CSS v4 |
-| State | Zustand |
-| Animation Preview | PixiJS 8 |
-| Auth | Clerk (`@clerk/react`) |
-| AI Backend | Retro Diffusion direct API (`api.retrodiffusion.ai/v1/inferences`) |
-| Storage | Cloudflare KV |
-| Payments | Stripe |
-| Export | JSZip |
-| Hosting | Cloudflare Pages (via `@opennextjs/cloudflare`) |
-| License | AGPL-3.0 (forked) |
+- Keep AI routes on `runtime = 'nodejs'` when they depend on Codex auth or other Node-only APIs.
+- Fix generation behavior in `src/lib/generation/` so both web and CLI benefit.
+- Inject auth via `ResolvedCredential`; do not make adapters read auth env ad hoc.
+- Add or change styles in `src/lib/styleRegistry.ts`, not inside UI components.
+- Reuse shared types from `src/lib/types.ts` or module-local `types.ts`; do not redeclare.
 
-## Build & Dev Commands
+## Auth Model
+
+- `IMAGE_GEN_AUTH_MODE` chooses the credential source:
+  - `api-key`: `OPENAI_API_KEY` + `OPENAI_BASE_URL`
+  - `codex-key`: `~/.codex/auth.json` API key
+  - `codex-oauth`: `~/.codex/auth.json` OAuth tokens
+  - `codex-auto`: env key, then Codex key, then Codex OAuth
+- `IMAGE_GEN_API_PROVIDER=gemini` bypasses the OpenAI-compatible path and uses `GeminiAdapter`.
+- Codex OAuth is read-only against `~/.codex`; rotated tokens are cached under `~/.spritebrew/codex-oauth-cache/`.
+
+## Commands
 
 ```bash
-npm install          # Install dependencies
-npm run dev          # Start development server (localhost:3000)
-npm run build        # Production build
-npm run start        # Start production server
-npm run lint         # Run ESLint
+npm install
+npm run dev
+npm run build
+npm run lint
+npm run test
+
+npm run cli -- actions
+npm run cli -- generate --schema
+npm run cli -- styles_list --tier fast
+npm run cli:typecheck
 ```
 
-**Environment variables** (`.env.local`):
+## Important Env Vars
+
+```env
+IMAGE_GEN_AUTH_MODE=api-key
+IMAGE_GEN_API_PROVIDER=
+
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com
+OPENAI_IMAGE_MODEL=gpt-image-2
+OPENAI_IMAGE_QUALITY=high
+OPENAI_RESPONSES_IMAGE_MODE=
+
+CODEX_HOME=
+CODEX_MAIN_MODEL=
+
+GEMINI_API_KEY=
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com
+GEMINI_IMAGE_MODEL=gemini-3.1-flash-image-preview
+
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
 ```
-RETRO_DIFFUSION_API_KEY=...        # Required for AI generation
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=...  # Required for auth UI
-CLERK_SECRET_KEY=...               # Required for auth backend
-# Optional:
-REPLICATE_API_TOKEN=...            # Legacy, no longer used
-STRIPE_SECRET_KEY=...              # Token purchase payments
-STRIPE_WEBHOOK_SECRET=...          # Stripe webhook verification
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=...
-```
 
-## Key Architecture Patterns
+## Common Change Map
 
-### SSE Streaming Generation
-The `/api/generate` route uses Server-Sent Events with 15-second heartbeat pings to keep the Cloudflare proxy alive during long AI generations (Cloudflare Pages has a 120-second proxy timeout). Client consumes via `src/lib/sseClient.ts`.
+- New style: edit `GENERATION_STYLES` in `src/lib/styleRegistry.ts`.
+- New animation type: edit `VALID_ACTIONS` and `ACTION_PROMPT_PREFIX` in `src/lib/generation/validate.ts`.
+- New export target: add it in `src/lib/constants.ts` and implement it in `src/lib/exportEngine.ts`.
+- New size preset: edit `SLICER_FRAME_PRESETS` in `src/lib/constants.ts`.
+- New image backend: add an `ImageGenAdapter` under `src/lib/imageGen/` and wire it in `src/lib/imageGen/index.ts`.
+- New auth mode: extend `src/lib/imageGen/auth/types.ts` and `src/lib/imageGen/auth/resolver.ts`.
+- New CLI action: add it under `src/ageniti/actions/` and register it in `src/ageniti/app.ts`.
 
-### Style Registry
-`src/lib/styleRegistry.ts` is the **single source of truth** for all generation styles. Each entry maps to a Retro Diffusion `prompt_style` value. Styles are organized by tier:
-- **fast** (3 tokens, $0.015-0.02/image, 64-384px)
-- **plus** (10 tokens, $0.025-0.06/image, 16-192px)
-- **pro** (40 tokens, $0.22/image, 96-256px, supports reference images)
-- **animation** (15 tokens, $0.07/image, fixed sizes)
+## Quick Architecture
 
-### Two Generation Modes
-1. **Create New** (`mode: 'create'`) — Text-to-sprite via prompt + style selection
-2. **Animate My Character** (`mode: 'animate'`) — Upload existing sprite + select action animation
-
-### Token Economy
-- Users purchase tokens via Stripe
-- Each generation debits tokens based on style cost
-- Failed generations auto-refund tokens
-- Balance stored in Cloudflare KV keyed by Clerk user ID
-
-### Multi-Engine Export
-`src/lib/exportEngine.ts` supports 6 export formats:
-- TexturePacker JSON Hash (Unity, Godot, Phaser, PixiJS)
-- GameMaker horizontal strips
-- RPG Maker MV/MZ 3×4 grid
-- Aseprite JSON
-- **Godot SpriteFrames .tres** ← directly usable in Godot 4
-- Raw Frames ZIP (individual PNGs)
-
-## Coding Conventions
-
-- TypeScript strict mode, React 19 with App Router
-- Edge Runtime for API routes (`export const runtime = 'edge'`)
-- Components in PascalCase, files in PascalCase.tsx
-- Shared types in `src/lib/types.ts` — import from there, don't redeclare
-- Style registry is append-friendly: add new styles to `GENERATION_STYLES` array in `styleRegistry.ts`
-- Constants (sizes, presets, animation types) live in `src/lib/constants.ts` — add presets there for automatic UI propagation
-- Zustand store (`spriteStore.ts`) is the single state source — don't use React context for sprite state
-
-## What to Update When Making Changes
-
-- **Adding a new generation style** → Add entry to `GENERATION_STYLES` in `styleRegistry.ts`
-- **Adding a new animation type** → Add to `ANIMATION_TYPES` in `constants.ts` + `VALID_ACTIONS` + `ACTION_STYLE_MAP` + `ACTION_PROMPT_PREFIX` in `api/generate/route.ts`
-- **Adding a new export format** → Add to `ENGINE_TARGETS` in `constants.ts` + implement in `exportEngine.ts`
-- **Adding a new sprite size preset** → Add to `SLICER_FRAME_PRESETS` in `constants.ts`
-- **Changing AI backend** → Modify `callRD()` in `api/generate/route.ts` + update `styleRegistry.ts` prompt_style values
-
-## Fork Notes
-
-This is a private fork by Cainiaooo for custom development. Upstream: GAlbanese09/spritebrew.
-
-Planned modifications:
-- Replace Retro Diffusion API with custom/self-hosted AI model backend
-- Adapt token/billing system for internal use
-- Potentially integrate with game-simulate project's asset pipeline
+- `/api/generate` uses SSE and relays partial images through `src/lib/sseClient.ts`.
+- `runCreate.ts` and `runAnimate.ts` are the shared pipelines for both web and CLI.
+- `validation.ts` mirrors server-side GPT Image constraints early to fail before network calls.
+- Export is currently a web feature; generation logic is shared, persistence is not.

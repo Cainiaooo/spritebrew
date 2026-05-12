@@ -1,6 +1,8 @@
 // Prompt-building helpers and animation grid layout selection.
 // Lifted verbatim from src/app/api/generate/route.ts.
 
+import type { StylePromptHints } from '@/lib/styleRegistry';
+
 export interface AnimationLayout {
   cols: number;
   rows: number;
@@ -49,21 +51,47 @@ export function buildAnimatePrompt(args: {
 // so the model designs the silhouette to read clearly when downsampled, but
 // avoids stating the literal output pixel count which the model treats as a
 // raw size constraint.
+//
+// `DEFAULT_PIXEL_SPRITE_HINTS` provides the shared scaffolding (lighting /
+// composition / negatives / extras). Each `GenerationStyle.promptHints`
+// layers on top and wins on collision — a character entry can replace
+// `composition` with "side view, full body visible" while still picking up
+// the default lighting and extras.
+export const DEFAULT_PIXEL_SPRITE_HINTS: Required<StylePromptHints> = {
+  lighting: 'flat even lighting with no strong shadows',
+  composition: 'subject centered, full body visible with small margin',
+  avoid: 'text, labels, speed lines, borders, gradient background',
+  extra: ['readable silhouette', 'high contrast edges'],
+};
+
 export function buildCreatePrompt(
   userPrompt: string,
   prefix: string,
   w: number,
   h: number,
   transparent: boolean,
+  hints?: StylePromptHints,
 ): string {
-  const parts = [
+  const merged: Required<StylePromptHints> = {
+    lighting: hints?.lighting ?? DEFAULT_PIXEL_SPRITE_HINTS.lighting,
+    composition: hints?.composition ?? DEFAULT_PIXEL_SPRITE_HINTS.composition,
+    avoid: hints?.avoid ?? DEFAULT_PIXEL_SPRITE_HINTS.avoid,
+    extra: hints?.extra ?? DEFAULT_PIXEL_SPRITE_HINTS.extra,
+  };
+
+  const parts: string[] = [
     prefix,
     userPrompt,
     `pixel art style, designed to read clearly when downsampled to a ${w}x${h} sprite`,
-    'subject centered with empty margin around it',
+    merged.composition,
+    merged.lighting,
   ];
   if (transparent) {
     parts.push('fully transparent background, no background color, no environment');
   }
-  return parts.join(', ');
+  parts.push(`avoid: ${merged.avoid}`);
+  if (merged.extra.length) {
+    parts.push(...merged.extra);
+  }
+  return parts.filter(Boolean).join(', ');
 }
