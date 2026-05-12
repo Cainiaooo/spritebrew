@@ -44,6 +44,112 @@ This project exposes its sprite-generation capabilities as a stateless Ageniti C
 - **User has 9 codex pet state images and wants to package them** → `codex_build`
 - **User asks anything else (slicing, engine export, gallery, tokens)** → tell them this CLI doesn't cover it; suggest the web UI
 
+## Parameter inference
+
+Infer these from the user's natural-language request. Do not ask the user to spell out CLI flags when the intent is clear.
+
+### Action selection
+
+| User intent | Action | Key flags |
+|---|---|---|
+| Describe a new character/item/creature | `generate` | `--style`, `--prompt`, `--width` |
+| Add motion to an existing sprite | `animate` | `--input-image`, `--action`, `--frames-duration` |
+| "What styles exist?" / browse options | `styles_list` | `--tier` or `--category` |
+| "What outfit parts are there?" | `parts_list` | `--category` |
+| Package 9 state PNGs into a Codex pet | `codex_build` | `--json` with states map |
+
+### Style inference
+
+| Request theme | Likely style | Notes |
+|---|---|---|
+| Character / hero / NPC / humanoid | `character` | Default for people |
+| Monster / creature / beast / dragon | `character` | Same style, different prompt |
+| Item / weapon / potion / icon | `item` | Small objects |
+| Walk cycle / 4-direction movement | `animation-walk` | Locked to 64×64 |
+| Idle loop / breathing animation | `animation-idle` | Locked to 64×64 |
+| VFX / spell / explosion / particle | `vfx` | Transparent effects |
+
+When unsure, run `styles_list --category <best_guess>` first — it costs nothing.
+
+### Size inference
+
+| Context | Default size |
+|---|---|
+| Character for top-down RPG | 64×64 |
+| Character for side-view platformer | 64×64 or 128×128 |
+| Icon / UI element | 32×32 or 48×48 |
+| Large boss / splash art | 256×256 or 512×512 |
+| Animation (walk/idle) | 64×64 (enforced by style) |
+
+### Animation parameter inference
+
+| User phrase | `--action` value | `--frames-duration` |
+|---|---|---|
+| "walk" / "走路" / "walking" | `walking` | 6 |
+| "idle" / "待机" / "breathing" | `idle` | 4 |
+| "attack" / "攻击" / "slash" | `attacking` | 6 |
+| "run" / "跑步" / "sprint" | `running` | 6 |
+| "jump" / "跳跃" | `jumping` | 4 |
+| "death" / "死亡" / "collapse" | `dying` | 8 |
+| "cast" / "施法" / "spell" | `casting` | 6 |
+
+### Agent-first mapping examples
+
+```
+"做一个火焰法师" → generate --style character --prompt "a fire mage, pixel art" --width 64 --height 64
+"给这个角色加走路动画" → animate --input-image <b64> --action walking --frames-duration 6 --width 64
+"有哪些风格可以选" → styles_list
+"生成一个大Boss的idle" → generate --style character --prompt "large boss monster, menacing" --width 128 --height 128
+"把这个精灵做成走路4方向" → animate --input-image <b64> --action walking --frames-duration 6 --width 64
+```
+
+## Guardrails
+
+Rules the agent must follow. Violating these leads to errors or wasted API cost.
+
+### Hard constraints (will cause errors)
+
+- **animate requires square input.** `width` must equal `height`. Always use `--width N` alone; height defaults to match.
+- **framesDuration must be 4, 6, or 8.** No other values are accepted.
+- **referenceImages must be raw base64.** Never include the `data:image/...;base64,` prefix.
+- **inputImage must be raw base64.** Same rule — no data-URI prefix.
+- **Reference image limit: 4 images, <16 MiB total.**
+
+### Soft constraints (will waste money or produce bad results)
+
+- **Never guess a style name.** Always confirm via `styles_list` first. Unknown styles silently fall back to the first registered style — you'll get unexpected output.
+- **Never skip qaWarnings.** After every `generate`/`animate`, check `data.qaWarnings`. If non-empty, report to the user before declaring success.
+- **Respect resolutionMode.** Some styles lock width/height. Passing mismatched dimensions → `VALIDATION_ERROR`. Check `resolutionMode` in `styles_list` output.
+- **Use --ndjson for long calls.** Without it, the user sees nothing for 5-30 seconds. Always use `--ndjson` for `generate` and `animate`.
+- **Use --idempotency-key for retries.** If you might retry a generation (e.g. after a timeout), pass a stable key so the second call is free.
+- **Do not generate what you can compose.** If the user wants a sprite sheet from existing frames, use the web UI slicer/export — don't burn AI credits re-generating.
+
+### Prompt writing rules
+
+- Always include the art style in the prompt (e.g. "pixel art", "16-bit RPG style").
+- Be specific about pose, view angle, and background expectations.
+- For characters: specify view (top-down 3/4, side-view, front-facing).
+- Keep prompts under ~200 words — longer prompts don't improve results.
+- Do not include "transparent background" in the prompt — the system handles this automatically.
+
+## QC checklist
+
+After every `generate` or `animate` call, verify:
+
+1. **`ok` is `true`** — if not, read `error.code` and handle accordingly.
+2. **`qaWarnings` is empty** — common warnings and what to do:
+   - `BACKGROUND_NOT_REMOVED` → the sprite may have opaque background artifacts; inform user, consider retry.
+   - `MOSTLY_TRANSPARENT` → generation likely failed; retry with a different prompt.
+   - `MOSTLY_OPAQUE` → background removal didn't work; retry or suggest manual edit in web UI.
+3. **Image dimensions match request** — decode the base64, verify width×height.
+4. **For animate: frame count is correct** — strip width should be `width × framesDuration`. If not, the generation failed silently.
+5. **Visual sanity** — if you can render/display the image, check that the subject is centered and not clipped at edges.
+
+If any check fails:
+- For retryable errors (`EXTERNAL_SERVICE_ERROR`, `TIMEOUT`, `RATE_LIMITED`): retry with same idempotency key.
+- For `VALIDATION_ERROR`: fix the input and retry.
+- For QA warnings: inform the user and offer to retry with adjusted prompt or suggest the pixel editor in the web UI.
+
 ## Invocation form
 
 ```bash
