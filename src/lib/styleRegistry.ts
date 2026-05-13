@@ -36,6 +36,12 @@ export interface GenerationStyle {
   id: string;
   label: string;
   description: string;
+  /**
+   * Public paths to static example images for this style. Index 0 is the hero
+   * thumbnail shown in the style card; full array is shown in the lightbox.
+   * Undefined for styles without curated examples (e.g., animation styles).
+   */
+  examplePaths?: string[];
   /** Legacy id retained for routing; not sent to the new adapter. */
   promptStyle: string;
   /** Prepended to the user prompt when generating. */

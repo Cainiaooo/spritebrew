@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { Sparkles, X, Check, Loader2, AlertCircle } from 'lucide-react';
+import { Sparkles, X, Check, Loader2, AlertCircle, ChevronDown, ChevronRight, Maximize2 } from 'lucide-react';
 import { useSpriteStore } from '@/stores/spriteStore';
 import Button from '@/components/ui/Button';
 import ReferenceImagesPanel from '@/components/sprites/ReferenceImagesPanel';
 import OutfitPicker from '@/components/sprites/OutfitPicker';
+import { StyleExamplesLightbox } from './StyleExamplesLightbox';
 import {
   GENERATION_STYLES,
   getStyleById,
@@ -69,6 +70,22 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
   const [customHeight, setCustomHeight] = useState(GENERATION_STYLES[0].defaultHeight);
   const [removeBg, setRemoveBg] = useState(true);
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  // Per-category collapse state — empty Set = all expanded (default).
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<StyleCategory>>(new Set());
+  // Style whose examples are open in the lightbox carousel. null = closed.
+  const [lightboxStyle, setLightboxStyle] = useState<GenerationStyle | null>(null);
+
+  const toggleCategory = (category: StyleCategory) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
 
   const selectedStyle = useMemo(
     () => getStyleById(selectedStyleId) ?? GENERATION_STYLES[0],
@@ -189,9 +206,16 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
           {(Object.entries(GROUPED_STYLES) as [StyleCategory, GenerationStyle[]][]).map(
             ([category, styles]) => (
               <div key={category}>
-                <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider mb-1.5">
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category)}
+                  className="flex items-center gap-1 w-full text-left text-[10px] font-mono text-text-muted uppercase tracking-wider mb-1.5 cursor-pointer hover:text-text-secondary transition-colors"
+                >
+                  {collapsedCategories.has(category) ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
                   {CATEGORY_LABELS[category]}
-                </p>
+                  <span className="text-text-muted/50 ml-1">({styles.length})</span>
+                </button>
+                {!collapsedCategories.has(category) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {styles.map((style) => {
                     const active = selectedStyleId === style.id;
@@ -206,11 +230,31 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
                           }`}
                       >
                         <div className="flex items-center gap-1.5">
+                          {style.examplePaths?.[0] && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img
+                              src={style.examplePaths[0]}
+                              alt=""
+                              className="w-6 h-6 rounded flex-shrink-0 object-cover"
+                              style={{ imageRendering: 'pixelated' }}
+                            />
+                          )}
                           <h3 className={`text-[11px] font-mono font-semibold truncate ${active ? 'text-accent-amber' : 'text-text-primary'}`}>
                             {style.label}
                           </h3>
                           {active && <Check size={10} className="text-accent-amber flex-shrink-0" />}
-                          <span className={`ml-auto text-[8px] font-mono px-1.5 py-0.5 rounded border flex-shrink-0 ${TIER_COLORS[style.tier] ?? 'text-text-muted border-border-subtle'}`}>
+                          {style.examplePaths && style.examplePaths.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setLightboxStyle(style); }}
+                              className="ml-auto p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors flex-shrink-0"
+                              aria-label={`View ${style.label} examples`}
+                              title="View examples"
+                            >
+                              <Maximize2 size={10} />
+                            </button>
+                          )}
+                          <span className={`${style.examplePaths?.length ? '' : 'ml-auto'} text-[8px] font-mono px-1.5 py-0.5 rounded border flex-shrink-0 ${TIER_COLORS[style.tier] ?? 'text-text-muted border-border-subtle'}`}>
                             {getTierLabel(style.tier)}
                           </span>
                         </div>
@@ -221,6 +265,7 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
                     );
                   })}
                 </div>
+                )}
               </div>
             )
           )}
@@ -327,6 +372,15 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
           )}
         </Button>
       </div>
+
+      <StyleExamplesLightbox
+        style={lightboxStyle}
+        onClose={() => setLightboxStyle(null)}
+        onUseStyle={() => {
+          if (lightboxStyle) setSelectedStyleId(lightboxStyle.id);
+          setLightboxStyle(null);
+        }}
+      />
     </div>
   );
 }
