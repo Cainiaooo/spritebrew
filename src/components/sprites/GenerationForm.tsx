@@ -8,6 +8,11 @@ import ReferenceImagesPanel from '@/components/sprites/ReferenceImagesPanel';
 import OutfitPicker from '@/components/sprites/OutfitPicker';
 import { StyleExamplesLightbox } from './StyleExamplesLightbox';
 import {
+  STICKY_CTA_BAR_CLASS_NAME,
+  STICKY_CTA_BAR_STYLE,
+  STICKY_CTA_SPACER_CLASS_NAME,
+} from './stickyCta';
+import {
   GENERATION_STYLES,
   getStyleById,
   getTierLabel,
@@ -162,6 +167,7 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
   ]);
 
   return (
+    <>
     <div className="space-y-6">
       <div>
         <label className="block text-xs font-mono text-text-secondary uppercase tracking-wider mb-2">
@@ -349,29 +355,8 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <p className="text-[10px] font-mono text-text-muted">
-          {effectiveWidth}x{effectiveHeight}px
-        </p>
-        <Button
-          size="lg"
-          onClick={handleGenerate}
-          disabled={!prompt.trim() || isGenerating}
-          className={!isGenerating && prompt.trim() ? 'animate-pulse' : ''}
-        >
-          {isGenerating ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              Brewing...
-            </>
-          ) : (
-            <>
-              <Sparkles size={16} />
-              {selectedStyle.isAnimation ? 'Generate Animation' : 'Generate Sprite'}
-            </>
-          )}
-        </Button>
-      </div>
+      {/* Sticky-button bottom spacer — keeps the last form element clear of the fixed bar below */}
+      <div className={STICKY_CTA_SPACER_CLASS_NAME} aria-hidden="true" />
 
       <StyleExamplesLightbox
         style={lightboxStyle}
@@ -382,5 +367,38 @@ export default function GenerationForm({ onGenerated }: GenerationFormProps) {
         }}
       />
     </div>
+
+    {/* Sticky generate bar — viewport-fixed at bottom, sidebar-offset on desktop */}
+    <div
+      className={STICKY_CTA_BAR_CLASS_NAME}
+      style={STICKY_CTA_BAR_STYLE}
+    >
+      <div className="max-w-5xl mx-auto">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+          <p className="text-[10px] font-mono text-text-muted">
+            {effectiveWidth}x{effectiveHeight}px
+          </p>
+          <Button
+            size="lg"
+            onClick={handleGenerate}
+            disabled={!prompt.trim() || isGenerating}
+            className={`w-full sm:w-auto whitespace-nowrap ${!isGenerating && prompt.trim() ? 'animate-pulse' : ''}`}
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Brewing...
+              </>
+            ) : (
+              <>
+                <Sparkles size={16} />
+                {selectedStyle.isAnimation ? 'Generate Animation' : 'Generate Sprite'}
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+    </>
   );
 }
