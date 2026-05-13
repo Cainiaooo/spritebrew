@@ -10,7 +10,7 @@ export async function composePreview(
   const baseBuf = Buffer.from(input.baseImage, 'base64');
 
   // Resize base to target dimensions
-  let composite = sharp(baseBuf).resize(width, height, { kernel: 'nearest', fit: 'cover' });
+  const composite = sharp(baseBuf).resize(width, height, { kernel: 'nearest', fit: 'cover' });
 
   // Build overlay list
   const overlays: sharp.OverlayOptions[] = [];

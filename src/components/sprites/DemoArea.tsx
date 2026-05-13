@@ -155,6 +155,7 @@ interface DemoAreaProps {
 export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
   const animations = useSpriteStore((s) => s.animations);
   const spriteSheet = useSpriteStore((s) => s.spriteSheet);
+  const hasDirectionalAnimations = animations.some((animation) => parseDirectional(animation.name) !== null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
@@ -898,29 +899,30 @@ export default function DemoArea({ frameDataUrls }: DemoAreaProps) {
             </button>
           </div>
 
-          {/* Natural facing toggle — for sheets generated facing left
-              (single-direction sheets only; ignored when directional anims exist). */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
-              Facing
-            </label>
-            {([
-              { id: 'left', label: '← Left' },
-              { id: 'right', label: 'Right →' },
-            ] as const).map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => setNaturalFacing(id)}
-                className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
-                  ${naturalFacing === id
-                    ? 'bg-accent-amber text-bg-primary'
-                    : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
-                  }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Natural facing only matters when left/right mirroring is active. */}
+          {!hasDirectionalAnimations && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
+                Facing
+              </label>
+              {([
+                { id: 'left', label: '← Left' },
+                { id: 'right', label: 'Right →' },
+              ] as const).map(({ id, label }) => (
+                <button
+                  key={id}
+                  onClick={() => setNaturalFacing(id)}
+                  className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors
+                    ${naturalFacing === id
+                      ? 'bg-accent-amber text-bg-primary'
+                      : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover border border-border-subtle'
+                    }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       )}
 

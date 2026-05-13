@@ -39,7 +39,7 @@ export interface GenerationStyle {
   /**
    * Public paths to static example images for this style. Index 0 is the hero
    * thumbnail shown in the style card; full array is shown in the lightbox.
-   * Undefined for styles without curated examples (e.g., animation styles).
+   * Undefined for styles without curated examples.
    */
   examplePaths?: string[];
   /** Legacy id retained for routing; not sent to the new adapter. */
@@ -73,9 +73,21 @@ const PIXEL_BASELINE_NEGATIVE =
 const PIXEL_BASELINE_POSITIVE =
   'pixel art, visible stepped pixel edges, limited palette, flat cel shading';
 
+const STYLE_EXAMPLE_PATHS: Record<string, string[]> = {
+  character: ['/style-examples/character-adventurer.svg'],
+  'character-portrait': ['/style-examples/character-portrait-commander.svg'],
+  'character-pro': ['/style-examples/character-pro-knight.svg'],
+  item: ['/style-examples/item-relic.svg'],
+  tile: ['/style-examples/tile-grassland.svg'],
+  environment: ['/style-examples/environment-sunset-ruins.svg'],
+  icon: ['/style-examples/icon-emberburst.svg'],
+  'animation-walk': ['/style-examples/animation-walk-cycle.svg'],
+};
+
 export const GENERATION_STYLES: GenerationStyle[] = [
   {
     id: 'character', label: 'Character', description: 'Game character sprite, side or three-quarter view',
+    examplePaths: STYLE_EXAMPLE_PATHS.character,
     promptStyle: 'character',
     promptPrefix: [
       'pixel art game character, clean readable silhouette, side or three-quarter view',
@@ -97,6 +109,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'character-portrait', label: 'Character Portrait', description: 'Frontal portrait, dialog-style bust',
+    examplePaths: STYLE_EXAMPLE_PATHS['character-portrait'],
     promptStyle: 'character_portrait',
     promptPrefix: [
       'pixel art character portrait, frontal head-and-shoulders bust, expressive face',
@@ -113,6 +126,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'character-pro', label: 'Character (High Detail)', description: 'Larger sprite with more shading detail',
+    examplePaths: STYLE_EXAMPLE_PATHS['character-pro'],
     promptStyle: 'character_pro',
     promptPrefix: [
       'detailed pixel art character with multi-step cel shading',
@@ -129,6 +143,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'item', label: 'Item / Inventory', description: 'Single inventory item, transparent background',
+    examplePaths: STYLE_EXAMPLE_PATHS.item,
     promptStyle: 'item',
     promptPrefix: [
       'pixel art inventory item, single object, three-quarter or top-down view',
@@ -151,6 +166,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'tile', label: 'Tile', description: 'Tileable terrain or environment tile',
+    examplePaths: STYLE_EXAMPLE_PATHS.tile,
     promptStyle: 'tile',
     promptPrefix: [
       'pixel art tileable texture tile, seamless edges that match the opposite edge',
@@ -168,6 +184,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'environment', label: 'Environment', description: 'Background scene or environment',
+    examplePaths: STYLE_EXAMPLE_PATHS.environment,
     promptStyle: 'environment',
     promptPrefix: [
       'pixel art environment background, atmospheric scene, multiple depth layers',
@@ -184,6 +201,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'icon', label: 'Skill / UI Icon', description: 'Square ability or UI icon',
+    examplePaths: STYLE_EXAMPLE_PATHS.icon,
     promptStyle: 'icon',
     promptPrefix: [
       'pixel art skill icon, bold centered silhouette, readable at small sizes',
@@ -201,6 +219,7 @@ export const GENERATION_STYLES: GenerationStyle[] = [
   },
   {
     id: 'animation-walk', label: 'Walk Cycle', description: 'Side-on walking animation, 6-frame sheet',
+    examplePaths: STYLE_EXAMPLE_PATHS['animation-walk'],
     promptStyle: 'animation__walk',
     promptPrefix: [
       'pixel art character walk cycle, side view, 6-frame sprite sheet, horizontal layout',
