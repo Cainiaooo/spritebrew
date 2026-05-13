@@ -4,11 +4,12 @@
 import { getImageGenAdapter } from '@/lib/imageGen';
 import {
   composeFramesHorizontally,
-  detectAndSliceFrames,
+  detectAndSliceFramesDetailed,
 } from '@/lib/imageGen/spritesheetSlicer';
 import { qaFrameSheet } from '@/lib/imageGen/qa';
 import { applyOutfitToSheet } from '@/lib/parts/compositor';
 import { buildAnimatePrompt, pickAnimationLayout } from './prompts';
+import { qcFrames } from './qc';
 import { ACTION_PROMPT_PREFIX, VALID_FRAME_DURATIONS } from './validate';
 import type { AnimateInput, AnimateResult, PartialImageHandler } from './types';
 
@@ -46,7 +47,7 @@ export async function runAnimate(
     onPartialImage,
   });
 
-  const frames = await detectAndSliceFrames(
+  const { rawFrames, processedFrames } = await detectAndSliceFramesDetailed(
     raw.rawBase64Image,
     { cols: layout.cols, rows: layout.rows },
     frameCount,
@@ -55,9 +56,13 @@ export async function runAnimate(
 
   // QA the per-frame array before stitching — sheet-level QA can't catch
   // size variation across frames once they've been packed into one image.
-  const qaWarnings = await qaFrameSheet(frames);
+  const qaWarnings = await qaFrameSheet(processedFrames);
+  const qcWarnings = await qcFrames(processedFrames, {
+    edgeCheckFrames: rawFrames,
+  });
+  qaWarnings.push(...qcWarnings);
 
-  let composed = await composeFramesHorizontally(frames, frameSize);
+  let composed = await composeFramesHorizontally(processedFrames, frameSize);
 
   if (body.outfit && Object.keys(body.outfit).length > 0) {
     composed = await applyOutfitToSheet(composed, body.outfit, frameCount, frameSize);

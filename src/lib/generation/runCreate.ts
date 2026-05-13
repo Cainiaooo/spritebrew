@@ -12,6 +12,11 @@ import { postProcessSprite } from '@/lib/imageGen/postProcess';
 import { qaSingleSprite } from '@/lib/imageGen/qa';
 import { applyOutfitBase64 } from '@/lib/parts/compositor';
 import { buildCreatePrompt } from './prompts';
+import {
+  shouldUseMagentaPipeline,
+  injectMagentaPrompt,
+  removeMagentaBackground,
+} from './postprocess';
 import type { CreateInput, CreateResult, PartialImageHandler } from './types';
 
 export async function runCreate(
@@ -25,14 +30,17 @@ export async function runCreate(
     (styleKey ? getStyleByPromptStyle(styleKey) ?? getStyleById(styleKey) : undefined) ??
     GENERATION_STYLES[0];
 
-  const prompt = buildCreatePrompt(
+  const useMagenta = shouldUseMagentaPipeline() && (body.removeBg ?? true);
+
+  let prompt = buildCreatePrompt(
     body.prompt.trim(),
     style.promptPrefix,
     w,
     h,
-    body.removeBg ?? true,
+    useMagenta ? false : (body.removeBg ?? true),
     style.promptHints,
   );
+  if (useMagenta) prompt = injectMagentaPrompt(prompt);
 
   const adapter = await getImageGenAdapter();
   const raw = await adapter.generate({
@@ -43,11 +51,15 @@ export async function runCreate(
     onPartialImage,
   });
 
-  let processed = await postProcessSprite(raw.rawBase64Image, {
+  const base64ForPostProcess = useMagenta
+    ? await removeMagentaBackground(raw.rawBase64Image)
+    : raw.rawBase64Image;
+
+  let processed = await postProcessSprite(base64ForPostProcess, {
     targetWidth: w,
     targetHeight: h,
     paletteColors: style.paletteColors,
-    removeBackground: body.removeBg ?? true,
+    removeBackground: useMagenta ? false : (body.removeBg ?? true),
   });
 
   if (body.outfit && Object.keys(body.outfit).length > 0) {

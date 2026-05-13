@@ -33,12 +33,14 @@ This project exposes its sprite-generation capabilities as a stateless Ageniti C
 | `parts_list` | List Pixabots outfit parts by category | none |
 | `generate` | Text → single pixel-art sprite (PNG) | calls AI provider, costs $$$ |
 | `animate` | Existing sprite → multi-frame animation strip | calls AI provider, costs $$$ |
+| `bundle` | Generate a set of related assets (idle+walk, cast+projectile+impact, etc.) | multiple AI calls, costs $$$× |
 | `codex_build` | 9 state PNGs → Codex Pet bundle (pet.json + WebP atlas) | none, pure compose |
 
 ### Decision tree
 
 - **User wants a fresh sprite from a description** → `generate`
 - **User wants to add motion to an existing sprite** → `animate`
+- **User wants a full set of assets for one character/spell** → `bundle`
 - **User asks "what styles are there"** → `styles_list`
 - **User asks about outfits / overlays** → `parts_list`
 - **User has 9 codex pet state images and wants to package them** → `codex_build`
@@ -272,6 +274,35 @@ For `generate` and `animate`, each `partial-image` artifact contains a base64 PN
    }'
    ```
 3. The output `spritesheetWebpBase64` is a 1536×1872 lossless WebP atlas — write it as `spritesheet.webp` next to `pet.json` from `data.petJson`.
+
+### Workflow E — bundle generation
+
+Use `bundle` when the user needs a coherent set of related assets for one character/spell/unit.
+
+1. Choose the bundle type:
+
+   | Bundle type | Produces | Best for |
+   |---|---|---|
+   | `unit` | idle sprite + walk animation | RPG NPCs, enemies, basic units |
+   | `spell` | cast sprite + projectile sprite + impact sprite | Magic abilities, ranged attacks |
+   | `combat` | idle sprite + attack animation + hurt animation | Fighters, melee enemies |
+   | `character_full` | idle + walk + attack + hurt | Playable heroes, main characters |
+
+2. Invoke:
+   ```bash
+   npm run cli -- bundle --type spell --prompt "ice wizard" --style character --width 64
+   ```
+
+3. The output contains an `assets` array — each entry has `name`, `imageBase64`, `type` (sprite or animation), and `qaWarnings`.
+
+4. The first `generate` step produces the base sprite. Subsequent `animate` steps use that base sprite as input, ensuring visual consistency across the bundle.
+
+5. Check `qaWarnings` on every asset in the array — any single failure should be reported.
+
+**When NOT to use bundle:**
+- User only needs one sprite or one animation → use `generate` or `animate` directly.
+- User needs assets for unrelated characters → run separate `generate` calls.
+- User wants fine control over each step's prompt → run steps manually.
 
 ## Common pitfalls
 

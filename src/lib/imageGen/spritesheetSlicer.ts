@@ -11,12 +11,53 @@ export interface SliceLayout {
   rows: number;
 }
 
+export interface SlicedFrames {
+  rawFrames: string[];
+  processedFrames: string[];
+}
+
 export async function detectAndSliceFrames(
   rawBase64: string,
   layout: SliceLayout,
   expectedFrameCount: number,
   targetFrameSize: number,
   paletteColors?: number,
+): Promise<string[]> {
+  const { processedFrames } = await detectAndSliceFramesDetailed(
+    rawBase64,
+    layout,
+    expectedFrameCount,
+    targetFrameSize,
+    paletteColors,
+  );
+  return processedFrames;
+}
+
+export async function detectAndSliceFramesDetailed(
+  rawBase64: string,
+  layout: SliceLayout,
+  expectedFrameCount: number,
+  targetFrameSize: number,
+  paletteColors?: number,
+): Promise<SlicedFrames> {
+  const rawFrames = await extractFrameCells(rawBase64, layout, expectedFrameCount);
+  const processedFrames = await Promise.all(
+    rawFrames.map((frame) =>
+      postProcessSprite(frame, {
+        targetWidth: targetFrameSize,
+        targetHeight: targetFrameSize,
+        paletteColors,
+      }),
+    ),
+  );
+
+  return { rawFrames, processedFrames };
+}
+
+export async function extractFrameCells(
+  rawBase64: string,
+  layout: SliceLayout,
+  expectedFrameCount: number,
 ): Promise<string[]> {
   if (expectedFrameCount < 1) {
     throw new Error(`detectAndSliceFrames: invalid frame count ${expectedFrameCount}`);
@@ -50,12 +91,7 @@ export async function detectAndSliceFrames(
       .png()
       .toBuffer();
 
-    const processed = await postProcessSprite(sliceBuf.toString('base64'), {
-      targetWidth: targetFrameSize,
-      targetHeight: targetFrameSize,
-      paletteColors,
-    });
-    frames.push(processed);
+    frames.push(sliceBuf.toString('base64'));
   }
 
   return frames;
