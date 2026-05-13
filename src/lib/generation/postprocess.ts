@@ -74,6 +74,38 @@ export async function removeMagentaBackground(
   return result.toString('base64');
 }
 
+export async function resizeBase64Image(
+  rawBase64: string,
+  targetWidth: number,
+  targetHeight: number,
+  fit: keyof sharp.FitEnum = 'fill',
+): Promise<string> {
+  const buf = Buffer.from(rawBase64, 'base64');
+  const resized = await sharp(buf)
+    .resize(targetWidth, targetHeight, {
+      kernel: 'nearest',
+      fit,
+    })
+    .png()
+    .toBuffer();
+  return resized.toString('base64');
+}
+
+export async function resizeBase64ImageIfNeeded(
+  rawBase64: string,
+  actualWidth: number | undefined,
+  actualHeight: number | undefined,
+  targetWidth: number,
+  targetHeight: number,
+  fit: keyof sharp.FitEnum = 'fill',
+): Promise<string> {
+  if (actualWidth === targetWidth && actualHeight === targetHeight) {
+    return rawBase64;
+  }
+
+  return resizeBase64Image(rawBase64, targetWidth, targetHeight, fit);
+}
+
 /** Returns true if the env quality is 'low' — signals magenta pipeline. */
 export function shouldUseMagentaPipeline(): boolean {
   const q = process.env.OPENAI_IMAGE_QUALITY?.trim().toLowerCase();

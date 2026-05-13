@@ -4,11 +4,11 @@
 
 ---
 
-## Phase 1：强化 Agent 规则体系（1-2 天）
+## Phase 1：强化 Agent 规则体系（1-2 天） ✅ 已完成
 
 目标：让 Claude/Codex 等 agent 通过阅读规则就能更好地使用 SpriteBrew CLI。
 
-### Task 1.1 — 重构 SKILL.md 参数推断规则
+### Task 1.1 — 重构 SKILL.md 参数推断规则 ✅
 
 **文件**：`skills/spritebrew-cli/SKILL.md`
 
@@ -24,7 +24,7 @@
 
 **验收标准**：agent 读完 SKILL.md 后，能从模糊的自然语言请求中正确推断所有参数。
 
-### Task 1.2 — 添加 Guardrail（护栏规则）
+### Task 1.2 — 添加 Guardrail（护栏规则） ✅
 
 **文件**：`skills/spritebrew-cli/SKILL.md`
 
@@ -36,7 +36,7 @@
 - 动画帧数只能是 4/6/8
 - referenceImages 不能带 `data:` 前缀
 
-### Task 1.3 — 添加 QC 检查清单
+### Task 1.3 — 添加 QC 检查清单 ✅
 
 **文件**：`skills/spritebrew-cli/SKILL.md`
 
@@ -49,11 +49,11 @@
 
 ---
 
-## Phase 2：Bundle 生成模式（2-3 天）
+## Phase 2：Bundle 生成模式（2-3 天） ✅ 已完成
 
 目标：支持一次请求生成一组相关资产。
 
-### Task 2.1 — 定义 Bundle 类型
+### Task 2.1 — 定义 Bundle 类型 ✅
 
 **文件**：`src/lib/generation/bundles.ts`（新建）
 
@@ -68,7 +68,7 @@
 
 每个 bundle 是一组有序的 generate/animate 调用。
 
-### Task 2.2 — CLI 支持 bundle 参数
+### Task 2.2 — CLI 支持 bundle 参数 ✅
 
 **文件**：`src/ageniti/actions/bundle.ts`（新建），`src/ageniti/app.ts`
 
@@ -83,7 +83,7 @@ npm run cli -- bundle \
 
 输出：多个 artifact，每个对应 bundle 中的一个资产。
 
-### Task 2.3 — SKILL.md 增加 Bundle 工作流
+### Task 2.3 — SKILL.md 增加 Bundle 工作流 ✅
 
 **文件**：`skills/spritebrew-cli/SKILL.md`
 

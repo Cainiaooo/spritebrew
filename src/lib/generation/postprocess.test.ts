@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import sharp from 'sharp';
 
-import { removeMagentaBackground } from './postprocess';
+import { removeMagentaBackground, resizeBase64Image } from './postprocess';
 
 test('removeMagentaBackground only clears magenta connected to the border', async () => {
   const width = 5;
@@ -49,4 +49,23 @@ test('removeMagentaBackground only clears magenta connected to the border', asyn
   assert.equal(borderAlpha, 0);
   assert.equal(centerAlpha, 255);
   assert.equal(ringAlpha, 255);
+});
+
+test('resizeBase64Image rescales images to the requested dimensions', async () => {
+  const input = await sharp({
+    create: {
+      width: 8,
+      height: 6,
+      channels: 4,
+      background: { r: 10, g: 20, b: 30, alpha: 1 },
+    },
+  })
+    .png()
+    .toBuffer();
+
+  const resized = await resizeBase64Image(input.toString('base64'), 5, 7);
+  const meta = await sharp(Buffer.from(resized, 'base64')).metadata();
+
+  assert.equal(meta.width, 5);
+  assert.equal(meta.height, 7);
 });

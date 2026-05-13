@@ -33,11 +33,16 @@ export function buildAnimatePrompt(args: {
   extraMotion: string;
 }): string {
   const { frameCount, layout, actionPrefix, extraMotion } = args;
+  const cellW = Math.floor(layout.canvasW / layout.cols);
+  const cellH = Math.floor(layout.canvasH / layout.rows);
   const parts = [
     `Generate a ${frameCount}-frame ${actionPrefix} animation of this character.`,
     'Identity lock: do not redesign the character. Preserve the exact head shape, face, markings, color palette, outline weight, body proportions, outfit, and silhouette of the reference image. Only the pose changes from frame to frame.',
-    `Output a single image arranged in a ${layout.cols}-column by ${layout.rows}-row grid of equally-sized cells.`,
+    `Output a single image arranged in a ${layout.cols}-column by ${layout.rows}-row grid of equally-sized cells (each cell ${cellW}×${cellH}px).`,
     'Frame order is reading order: left-to-right within each row, then top-to-bottom across rows.',
+    // Layout guide constraints
+    `Layout constraints: each cell is exactly ${cellW}×${cellH}px. The character must stay within the inner 80% safe zone of each cell (${Math.floor(cellW * 0.1)}px margin on each side). Center the character horizontally and align feet to a consistent baseline across all frames.`,
+    'Scale lock: the character must occupy the same proportional area in every frame. Do not shrink or enlarge the character between frames — only the pose changes.',
     'Every cell has identical size; the character is centered in each cell at the same scale.',
     'Pixel art style. Use a fully transparent background (alpha 0) — no checker pattern, no white fill, no visible gridlines between cells.',
     'Do not draw speed lines, motion arcs, afterimages, smears, dust clouds, cast shadows, drop shadows, glow, halo, aura, text, labels, frame numbers, or floating symbols.',
@@ -84,6 +89,7 @@ export function buildCreatePrompt(
     userPrompt,
     `pixel art style, designed to read clearly when downsampled to a ${w}x${h} sprite`,
     merged.composition,
+    `keep the subject within the inner 80% safe zone (leave ${Math.max(1, Math.round(w * 0.1))}px margin), do not let limbs or weapons touch the image edge`,
     merged.lighting,
   ];
   if (transparent) {
