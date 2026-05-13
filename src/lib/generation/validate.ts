@@ -2,7 +2,12 @@
 // Lifted verbatim from src/app/api/generate/route.ts so they can be reused
 // by both the Next.js route and the Ageniti CLI surface.
 
-import { getResolutionMode } from '@/lib/styleRegistry';
+import {
+  GENERATION_STYLES,
+  getResolutionMode,
+  getStyleById,
+  getStyleByPromptStyle,
+} from '@/lib/styleRegistry';
 import {
   MAX_REFERENCE_IMAGES,
   REF_TOTAL_BASE64_BUDGET,
@@ -36,10 +41,14 @@ export const ACTION_PROMPT_PREFIX: Record<string, string> = {
 
 export function validateCreateBody(body: CreateInput): string | null {
   if (!body.prompt?.trim()) return 'Prompt is required.';
-  const ps = body.promptStyle ?? body.style;
-  if (!ps) return 'Style is required.';
+  const styleKey = body.promptStyle ?? body.style;
+  const resolvedStyle =
+    (styleKey ? getStyleById(styleKey) ?? getStyleByPromptStyle(styleKey) : undefined) ??
+    GENERATION_STYLES[0];
+  const resolvedPromptStyle =
+    styleKey ? resolvedStyle.promptStyle ?? styleKey : resolvedStyle.promptStyle;
 
-  const mode = getResolutionMode(ps);
+  const mode = getResolutionMode(resolvedPromptStyle);
   if (mode && body.width !== undefined && body.height !== undefined) {
     if (mode.kind === 'locked') {
       if (body.width !== mode.size || body.height !== mode.size) {
@@ -51,6 +60,22 @@ export function validateCreateBody(body: CreateInput): string | null {
       }
       if (body.height < mode.min || body.height > mode.max) {
         return `Height must be between ${mode.min} and ${mode.max}. Got ${body.height}.`;
+      }
+    }
+  } else if (body.width !== undefined && body.height !== undefined) {
+    if (resolvedStyle.fixedSize) {
+      if (
+        body.width !== resolvedStyle.defaultWidth ||
+        body.height !== resolvedStyle.defaultHeight
+      ) {
+        return `This style is locked at ${resolvedStyle.defaultWidth}x${resolvedStyle.defaultHeight}. Got ${body.width}x${body.height}.`;
+      }
+    } else {
+      if (body.width < resolvedStyle.minSize || body.width > resolvedStyle.maxSize) {
+        return `Width must be between ${resolvedStyle.minSize} and ${resolvedStyle.maxSize}. Got ${body.width}.`;
+      }
+      if (body.height < resolvedStyle.minSize || body.height > resolvedStyle.maxSize) {
+        return `Height must be between ${resolvedStyle.minSize} and ${resolvedStyle.maxSize}. Got ${body.height}.`;
       }
     }
   }
