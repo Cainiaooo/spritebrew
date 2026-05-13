@@ -15,6 +15,8 @@ import {
   exportGameMaker,
   exportRPGMaker,
   exportGodot,
+  exportUnityAnim,
+  exportCollisionMeta,
   exportRawFrames,
   exportLayered,
   type ExportOptions,
@@ -221,6 +223,12 @@ export default function ExportConfig() {
         case 'godot-tres':
           await exportGodot(baseOpts);
           break;
+        case 'unity-anim':
+          await exportUnityAnim(baseOpts);
+          break;
+        case 'collision-meta':
+          await exportCollisionMeta(baseOpts);
+          break;
         case 'raw-frames':
           await exportRawFrames({ ...baseOpts, includeManifest });
           break;
@@ -365,7 +373,7 @@ export default function ExportConfig() {
         )}
 
         {/* TexturePacker / Aseprite options */}
-        {(selectedEngine === 'texturepacker' || selectedEngine === 'aseprite' || selectedEngine === 'godot-tres') && (
+        {(selectedEngine === 'texturepacker' || selectedEngine === 'aseprite' || selectedEngine === 'godot-tres' || selectedEngine === 'unity-anim') && (
           <div className="space-y-3">
             <div className="flex items-center gap-4">
               <div>

@@ -8,6 +8,13 @@ import {
   resizeFrame,
   sanitizeFilename,
 } from '@/lib/downloadUtils';
+import {
+  buildGodotAnimationEntries,
+  buildUnityAnimationClip,
+  buildUnitySpriteMeta,
+  createUnityGuid,
+  type ExportAnimationMeta,
+} from '@/lib/exportSerializers';
 import { loadImage } from '@/lib/spriteUtils';
 import { PARTS, type Outfit, type PartCategory } from '@/lib/parts/catalog';
 
@@ -327,12 +334,12 @@ export async function exportGodot(opts: ExportOptions): Promise<void> {
 
   // Build combined sheet
   const allCanvases: HTMLCanvasElement[] = [];
-  const animMeta: { name: string; startIdx: number; count: number; fps: number }[] = [];
+  const animMeta: ExportAnimationMeta[] = [];
 
   for (const anim of animations) {
     if (anim.frames.length === 0) continue;
     const canvases = await loadFrameCanvases(anim.frames, frameDataUrls, fw, fh);
-    animMeta.push({ name: anim.name, startIdx: allCanvases.length, count: canvases.length, fps: anim.fps });
+    animMeta.push({ name: anim.name, startIdx: allCanvases.length, count: canvases.length, fps: anim.fps, loop: anim.loop });
     allCanvases.push(...canvases);
   }
 
@@ -344,33 +351,6 @@ export async function exportGodot(opts: ExportOptions): Promise<void> {
   const pngFilename = `${sanitizeFilename(sheetName)}.png`;
   const tresFilename = `${sanitizeFilename(sheetName)}.tres`;
 
-  // Build .tres
-  const animEntries = animMeta.map((am) => {
-    const frameEntries: string[] = [];
-    for (let i = 0; i < am.count; i++) {
-      const globalIdx = am.startIdx + i;
-      const col = globalIdx % columns;
-      const row = Math.floor(globalIdx / columns);
-      const x = col * (fw + padding);
-      const y = row * (fh + padding);
-      frameEntries.push(
-        `{
-      "duration": 1.0,
-      "texture": SubResource("atlas_${globalIdx}")
-    }`
-      );
-      // We'll need to define atlas sub-resources
-      void x; void y;
-    }
-
-    return `{
-    "frames": [${frameEntries.join(', ')}],
-    "loop": true,
-    "name": "${am.name}",
-    "speed": ${am.fps}.0
-  }`;
-  });
-
   // Build atlas sub-resources
   const subResources: string[] = [];
   for (let i = 0; i < allCanvases.length; i++) {
@@ -379,11 +359,15 @@ export async function exportGodot(opts: ExportOptions): Promise<void> {
     const x = col * (fw + padding);
     const y = row * (fh + padding);
     subResources.push(
-      `[sub_resource type="AtlasTexture" id="atlas_${i}"]
-atlas = ExtResource("1")
-region = Rect2(${x}, ${y}, ${fw}, ${fh})`
+      `[sub_resource type="AtlasTexture" id="atlas_${i}"]\natlas = ExtResource("1")\nregion = Rect2(${x}, ${y}, ${fw}, ${fh})`
     );
   }
+
+  // Build animation entries in Godot resource format
+  const animEntries = buildGodotAnimationEntries(
+    animMeta,
+    (frameIndex) => `SubResource("atlas_${frameIndex}")`,
+  );
 
   const tres = `[gd_resource type="SpriteFrames" load_steps=${allCanvases.length + 2} format=3]
 
@@ -392,7 +376,7 @@ region = Rect2(${x}, ${y}, ${fw}, ${fh})`
 ${subResources.join('\n\n')}
 
 [resource]
-animations = [${animEntries.join(', ')}]
+animations = [${animEntries}]
 `;
 
   const pngBlob = await canvasToBlob(sheet);
@@ -408,6 +392,99 @@ animations = [${animEntries.join(', ')}]
   } else {
     downloadFile(pngBlob, pngFilename);
   }
+}
+
+// ─── Unity AnimationClip (.anim) + Atlas Metadata ───
+
+export async function exportUnityAnim(opts: ExportOptions): Promise<void> {
+  const { animations, frameDataUrls, padding, powerOfTwo, sheetName } = opts;
+  const fw = opts.resizeWidth ?? opts.frameWidth;
+  const fh = opts.resizeHeight ?? opts.frameHeight;
+
+  const allCanvases: HTMLCanvasElement[] = [];
+  const animMeta: ExportAnimationMeta[] = [];
+
+  for (const anim of animations) {
+    if (anim.frames.length === 0) continue;
+    const canvases = await loadFrameCanvases(anim.frames, frameDataUrls, fw, fh);
+    animMeta.push({ name: anim.name, startIdx: allCanvases.length, count: canvases.length, fps: anim.fps, loop: anim.loop });
+    allCanvases.push(...canvases);
+  }
+
+  if (allCanvases.length === 0) return;
+
+  const columns = optimalColumns(allCanvases.length);
+  const sheet = assembleGridSheet(allCanvases, columns, padding, powerOfTwo);
+  const pngFilename = `${sanitizeFilename(sheetName)}.png`;
+  const frameAssets = await Promise.all(allCanvases.map(async (canvas, index) => {
+    const name = `${sanitizeFilename(sheetName)}_${index}.png`;
+    const guid = createUnityGuid(`${sanitizeFilename(sheetName)}:${index}`);
+    return {
+      name,
+      guid,
+      data: await canvasToBlob(canvas),
+    };
+  }));
+
+  // Build Unity .anim YAML for each animation
+  const animFiles: { name: string; data: string }[] = [];
+  for (const am of animMeta) {
+    const frameGuids = Array.from(
+      { length: am.count },
+      (_, index) => frameAssets[am.startIdx + index].guid,
+    );
+    animFiles.push({
+      name: `${sanitizeFilename(am.name)}.anim`,
+      data: buildUnityAnimationClip({
+        clipName: am.name,
+        fps: am.fps,
+        loop: am.loop,
+        frameGuids,
+      }),
+    });
+  }
+
+  // Build sprite atlas metadata JSON (maps sprite names to atlas regions)
+  const sprites: Record<string, { x: number; y: number; w: number; h: number; pivot: { x: number; y: number } }> = {};
+  for (let i = 0; i < allCanvases.length; i++) {
+    const col = i % columns;
+    const row = Math.floor(i / columns);
+    sprites[`${sanitizeFilename(sheetName)}_${i}`] = {
+      x: col * (fw + padding),
+      y: row * (fh + padding),
+      w: fw,
+      h: fh,
+      pivot: { x: 0.5, y: 0 }, // bottom-center pivot for characters
+    };
+  }
+
+  const atlasMeta = JSON.stringify({
+    generator: 'SpriteBrew',
+    texture: pngFilename,
+    textureSize: { w: sheet.width, h: sheet.height },
+    spriteSize: { w: fw, h: fh },
+    sprites,
+    animations: animMeta.map((am) => ({
+      name: am.name,
+      fps: am.fps,
+      loop: am.loop,
+      frames: Array.from({ length: am.count }, (_, i) => `${sanitizeFilename(sheetName)}_${am.startIdx + i}`),
+    })),
+  }, null, 2);
+
+  const pngBlob = await canvasToBlob(sheet);
+  await downloadAsZip(
+    [
+      { name: pngFilename, data: pngBlob },
+      { name: `${sanitizeFilename(sheetName)}_atlas.json`, data: atlasMeta },
+      ...animFiles,
+      ...frameAssets.flatMap((asset) => [
+        { name: `frames/${asset.name}`, data: asset.data },
+        { name: `frames/${asset.name}.meta`, data: buildUnitySpriteMeta(asset.guid) },
+      ]),
+    ],
+    'spritebrew_export_unity.zip'
+  );
 }
 
 // ─── Layered (runtime-composable) ───
@@ -538,6 +615,116 @@ function pickFirstFrameSuffix(part: { frames?: number; kind?: string }): string 
   if (part.kind === 'blink') return 'open';
   if (part.kind === 'sequence') return '01';
   return '01';
+}
+
+// ─── Collision / Region Metadata (JSON) ───
+
+export async function exportCollisionMeta(opts: ExportOptions): Promise<void> {
+  const { animations, frameDataUrls, sheetName } = opts;
+  const fw = opts.resizeWidth ?? opts.frameWidth;
+  const fh = opts.resizeHeight ?? opts.frameHeight;
+
+  const animCollisions: unknown[] = [];
+
+  for (const anim of animations) {
+    if (anim.frames.length === 0) continue;
+    const canvases = await loadFrameCanvases(anim.frames, frameDataUrls, fw, fh);
+    const frames: unknown[] = [];
+
+    for (let i = 0; i < canvases.length; i++) {
+      const canvas = canvases[i];
+      const ctx = canvas.getContext('2d')!;
+      const imgData = ctx.getImageData(0, 0, fw, fh);
+      const { aabb, hull } = computeCollision(imgData, fw, fh);
+      frames.push({ frame: i, aabb, convexHull: hull });
+    }
+
+    animCollisions.push({ name: anim.name, frames });
+  }
+
+  const meta = JSON.stringify({
+    generator: 'SpriteBrew',
+    frameSize: { w: fw, h: fh },
+    animations: animCollisions,
+  }, null, 2);
+
+  const files: { name: string; data: string }[] = [
+    { name: `${sanitizeFilename(sheetName)}_collision.json`, data: meta },
+  ];
+  await downloadAsZip(files, 'spritebrew_export_collision.zip');
+}
+
+function computeCollision(
+  imgData: ImageData,
+  w: number,
+  h: number,
+): { aabb: { x: number; y: number; w: number; h: number }; hull: Array<{ x: number; y: number }> } {
+  const data = imgData.data;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  const opaquePoints: Array<{ x: number; y: number }> = [];
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 16) {
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+        // Sample edge pixels for hull (every 2px on boundary)
+        if (x === 0 || x === w - 1 || y === 0 || y === h - 1 ||
+            data[((y - 1) * w + x) * 4 + 3] <= 16 ||
+            data[((y + 1) * w + x) * 4 + 3] <= 16 ||
+            data[(y * w + x - 1) * 4 + 3] <= 16 ||
+            data[(y * w + x + 1) * 4 + 3] <= 16) {
+          opaquePoints.push({ x, y });
+        }
+      }
+    }
+  }
+
+  const aabb = maxX < 0
+    ? { x: 0, y: 0, w: 0, h: 0 }
+    : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+
+  // Convex hull via gift wrapping (Jarvis march) on sampled edge points
+  const hull = opaquePoints.length > 2 ? convexHull(opaquePoints) : opaquePoints;
+
+  return { aabb, hull };
+}
+
+function convexHull(points: Array<{ x: number; y: number }>): Array<{ x: number; y: number }> {
+  // Downsample if too many points
+  let pts = points;
+  if (pts.length > 200) {
+    const step = Math.ceil(pts.length / 200);
+    pts = pts.filter((_, i) => i % step === 0);
+  }
+
+  // Find leftmost point
+  let start = 0;
+  for (let i = 1; i < pts.length; i++) {
+    if (pts[i].x < pts[start].x || (pts[i].x === pts[start].x && pts[i].y < pts[start].y)) {
+      start = i;
+    }
+  }
+
+  const hull: Array<{ x: number; y: number }> = [];
+  let current = start;
+  do {
+    hull.push(pts[current]);
+    let next = 0;
+    for (let i = 1; i < pts.length; i++) {
+      if (i === current) continue;
+      if (next === current) { next = i; continue; }
+      const cross = (pts[i].x - pts[current].x) * (pts[next].y - pts[current].y) -
+                    (pts[i].y - pts[current].y) * (pts[next].x - pts[current].x);
+      if (cross > 0) next = i;
+    }
+    current = next;
+    if (hull.length > 64) break; // safety limit
+  } while (current !== start);
+
+  return hull;
 }
 
 // ─── Raw Individual Frames ───

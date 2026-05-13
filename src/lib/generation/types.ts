@@ -47,3 +47,44 @@ export interface AnimateResult {
 }
 
 export type { PartialImageHandler, QaWarning };
+
+// ─── Map Generation (Phase 5 POC) ───
+
+export interface MapCreateInput {
+  prompt: string;
+  style: 'overworld' | 'dungeon' | 'interior' | 'forest' | 'desert';
+  width?: number;
+  height?: number;
+}
+
+export interface MapCreateResult {
+  success: true;
+  baseImageUrl: string;
+  dressedImageUrl: string;
+  prediction: { status: string; cost?: number };
+}
+
+export interface PropPackInput {
+  dressedImage: string; // base64, no data: prefix
+  prompt: string;
+  width?: number;
+  height?: number;
+}
+
+export interface PropPackResult {
+  success: true;
+  props: Array<{ id: string; imageUrl: string; label: string }>;
+  prediction: { status: string; cost?: number };
+}
+
+export interface ComposePreviewInput {
+  baseImage: string; // base64
+  props: Array<{ imageBase64: string; x: number; y: number; scale?: number }>;
+  width: number;
+  height: number;
+}
+
+export interface ComposePreviewResult {
+  success: true;
+  composedImageUrl: string;
+}

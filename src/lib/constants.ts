@@ -56,6 +56,8 @@ export const ENGINE_TARGETS = [
   { id: 'rpgmaker', label: 'RPG Maker MV/MZ', engines: ['RPG Maker MV', 'RPG Maker MZ'] },
   { id: 'aseprite', label: 'Aseprite JSON', engines: ['Aseprite', 'Phaser 3'] },
   { id: 'godot-tres', label: 'Godot SpriteFrames', engines: ['Godot 4'] },
+  { id: 'unity-anim', label: 'Unity AnimationClip', engines: ['Unity'] },
+  { id: 'collision-meta', label: 'Collision Metadata', engines: ['Godot 4', 'Unity', 'Custom'] },
   { id: 'raw-frames', label: 'Individual Frames (PNG)', engines: ['Any'] },
   { id: 'layered', label: 'Layered (Runtime)', engines: ['PixiJS', 'Phaser', 'Custom'] },
 ] as const;
